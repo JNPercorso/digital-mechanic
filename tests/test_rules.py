@@ -88,9 +88,12 @@ def test_quote_must_be_on_page():
 def test_numbers_need_citation():
     text = ("**Наблюдения**\nОценка отклонения 0,72\n**Проверки**\n1. Зазор 0,30 мм\n"
             "2. Зазор 0,40 мм [[yamz536_re:173]]\n3. Снять крышку (рисунок 46)")
-    out, removed = rules.unsupported_lines(text)
+    out, removed = rules.unsupported_lines(text, {"0,72"})  # 0,72 - из результата проверки ML
     assert removed == ["1. Зазор 0,30 мм"]
     assert "Оценка отклонения 0,72" in out and "рисунок 46" in out
+    # норматив в «Наблюдениях» без ссылки тоже убирается; номер модели двигателя нормативом не считается
+    out, removed = rules.unsupported_lines("**Наблюдения**\nЭФУ обеспечивает пуск до -22 °C\nДвигатель ЯМЗ-236М2")
+    assert removed == ["ЭФУ обеспечивает пуск до -22 °C"]
 
 
 def test_operations_must_come_from_pages():

@@ -258,6 +258,7 @@ def quote_on_page(quote: str, page_text: str) -> bool:
     return sum(1 for s in shingles if s in p) / len(shingles) >= 0.8
 
 
+_MODEL = re.compile(r"(ЯМЗ|ЗМЗ|МАЗ|КАМАЗ|ПАЗ|УАЗ|ГАЗ|Урал|ЗИЛ)\s*[-–]?\s*\d[\w.]*", re.I)
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
 _BAN = re.compile(r"эксплуатац[^.]{0,40}(не допуска|запрещ)|запрещ\w* эксплуатац|прекрат\w* эксплуатац|"
                   r"не выпуска\w*|выпуск\w* в рейс запрещ|нельзя (выпуска|эксплуатир)", re.I)
@@ -280,11 +281,11 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
             continue
         body = re.sub(r"\[\[[^\]]*\]\]", "", s)
         body = re.sub(r"^(\d+[.)]|[-•*])\s+", "", body)
-        body = _NOT_NORM.sub("", body)
+        body = _NOT_NORM.sub("", _MODEL.sub("", body))
         for x in sorted(allowed_numbers, key=len, reverse=True):  # данные машины (оценки, даты) - не нормативы
             body = body.replace(x, "")
         ban = _BAN.search(s) and "[[" not in s  # запрет эксплуатации - только со ссылкой на страницу руководства
-        if not ban and ("наблюд" in section or "слышно" in section or "противореч" in section or "[[" in s or not _NUM.search(body)):
+        if not ban and ("противореч" in section or "[[" in s or not _NUM.search(body)):
             out.append(line)
         else:
             removed.append(s)
@@ -305,7 +306,7 @@ def op_supported(op: str, pages_text: str) -> bool:
     (без общих слов действий) должна встречаться на страницах.
     """
     pt = _norm(pages_text)
-    nums = _NUM.findall(_SECTION_NO.sub("", op))
+    nums = _NUM.findall(_SECTION_NO.sub("", _MODEL.sub("", op)))
     for num in nums:
         if _norm(num) not in pt:
             return False
@@ -451,3 +452,18 @@ def resolve_disputed_ops(ops: list[str], conflicts: list[dict]) -> tuple[list[st
         if new != o:
             changed.append(f"{o} -> {new}")
     return out, changed
+
+
+def drop_empty_sections(text: str) -> str:
+    """Убирает заголовки разделов, под которыми после проверок ничего не осталось."""
+    lines = text.split(chr(10))
+    head = lambda x: bool(re.match(r"^\s*(\*\*[^*]+\*\*|#+\s.+)\s*$", x))  # noqa: E731
+    out = []
+    for i, line in enumerate(lines):
+        if head(line):
+            rest = lines[i + 1:]
+            nxt = next((x for x in rest if x.strip()), None)
+            if nxt is None or head(nxt):
+                continue
+        out.append(line)
+    return re.sub(r"\n{3,}", chr(10) * 2, chr(10).join(out)).strip()
