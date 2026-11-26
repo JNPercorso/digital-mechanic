@@ -150,6 +150,8 @@ button{font:inherit;cursor:pointer;color:inherit}
 .pv .pimg{min-height:0;overflow:auto;display:flex;background:#fff;border-radius:12px;border:1px solid var(--border-strong);touch-action:pan-x pan-y;cursor:zoom-in}.pv .pimg.zoomed{cursor:zoom-out}
 .pv .pimg img{margin:auto;display:block;flex:none;user-select:none;-webkit-user-select:none}
 .pv .pvbody .page{margin-top:0;max-height:none;min-height:0;position:relative}
+.pv .ptab{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:13px}.pv .ptab td{border:1px solid var(--border-strong);padding:5px 7px;vertical-align:top}.pv .ptab tr.hl td{background:rgba(255,214,10,.18)}
+.lowok{display:flex;gap:8px;align-items:flex-start;margin:8px 0 4px;font-size:13.5px;cursor:pointer}.lowok input{margin-top:3px;width:18px;height:18px;flex:none}
 .pv .pnav{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px}
 
 .ticket textarea,.ticket select{width:100%;font:inherit;border:1px solid var(--border-strong);border-radius:12px;padding:6px 10px;background:var(--surface);color:var(--text)}
@@ -449,29 +451,34 @@ const TICON='<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentC
 const srcHTML=(r,q)=>`<span class="src" data-doc="${r.doc_id||''}" data-page="${r.page}" data-q="${q||''}" data-sq="${esc(r.sq||'')}"><i class="ti ti-file-text"></i>${esc(r.manual)}, стр. PDF ${r.page}</span>`;
 const listHTML=a=>a&&a.length?'<ul class="tl">'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<div>-</div>';
 const note=(k,t,ic)=>`<div class="note n-${k}"><i class="ti ti-${ic||(k==='bad'?'alert-triangle':k==='ok'?'check':'info-circle')}"></i><div>${esc(t)}</div></div>`;
-function ticketHTML(d){if(d.sent)return note('ok','Заявка '+d.no+' создана в ТОиР');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-low'}[d.prio];const lowN=d.low?note('warn','Вывод предварительный: точность распознавания низкая. Машина направляется на повторную дефектовку, эту работу убрать нельзя.','alert-triangle'):'';const ed=d.low?d.works.slice(1):d.works;
+function ticketHTML(d){if(d.sent)return note('ok','Заявка '+d.no+' создана в ТОиР');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-low'}[d.prio];const lowN=d.low?note('warn',`Вывод предварительный: ${d.sq==='warning'?'запись с помехами, ':''}точность распознавания ${d.conf!=null?String(d.conf.toFixed(2)).replace('.',','):'низкая'} (порог предварительного вывода 0,60; ниже 0,50 заявка не формируется). Первая работа - повторная проверка, убрать её нельзя.`,'alert-triangle')+`<label class="lowok"><input type="checkbox" data-lowok ${d.lowOk?'checked':''}> Я видел предупреждение и подтверждаю заявку по предварительному выводу</label>`:'';const ed=d.low?d.works.slice(1):d.works;
  const head=t=>`<div class="chead"><span>${TICON}${t}</span></div>`;
  const fault=`<div class="lbl">Неисправность</div><div>${d.code} · ${esc(FAULTS[d.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(d.conclusion)}</div>`;
- const srcs=`<div class="lbl">Источники${d.editing?' (меняются только через агента)':''}</div><div>${d.srcs.map(r=>srcHTML(r,esc(d.works.join('. ')))).join('')}</div>`;
+ const srcs=`<div class="lbl">Источники${d.editing?' (меняются только через агента)':''}</div><div>${d.srcs.map(r=>srcHTML(r,esc(r.quote||d.works.join('. ')))).join('')}</div>`;
  if(d.editing)return `<div class="ticket card">${head('Изменение черновика')}${fault}<div class="lbl">Приоритет</div><select id="ePrio">${['Высокий','Средний','Низкий'].map(x=>`<option ${x===d.prio?'selected':''}>${x}</option>`).join('')}</select><div class="lbl">Работы (по одной в строке)</div>${d.low?`<div class="mut" style="margin:4px 0"><i class="ti ti-lock"></i> ${esc(d.works[0])}</div>`:''}<textarea id="eWorks" rows="5">${esc(ed.join('\n'))}</textarea><div class="lbl">Запчасти (по одной в строке)</div><textarea id="eParts" rows="3">${esc(d.parts.join('\n'))}</textarea>${srcs}<div class="row"><button class="btnp" data-tk="save">Сохранить</button><button class="btn" data-tk="noedit">Не сохранять</button></div></div>`;
- return `<div class="ticket card">${head('Черновик заявки')}${lowN}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send"><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
+ return `<div class="ticket card">${head('Черновик заявки')}${lowN}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send" ${d.low&&!d.lowOk?'disabled title="Сначала подтвердите предупреждение"':''}><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
 function fillDraft(){const all=document.querySelectorAll('#chat .chat-ticket');all.forEach((el,i)=>{el.innerHTML=(i===all.length-1&&draft&&sel&&draft.vid===sel.id)?ticketHTML(draft):'';});bindTicket();}
 function refreshDraft(){renderMain();}
 function openTicket(vid,no){const t=(tickets[vid]||[]).find(x=>x.no===no);if(!t)return;const v=V.find(x=>x.id===vid);const m=document.createElement('div');m.className='modal';
- m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-ok">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(r=>srcHTML(r,esc(t.works.join('. ')))).join('')}</div></div>`;
+ m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-ok">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(r=>srcHTML(r,esc(r.quote||t.works.join('. ')))).join('')}</div></div>`;
  m.onclick=e=>{if(e.target===m||e.target.closest('.rbtn'))m.remove();};$('frame').appendChild(m);logEv('ui','просмотр заявки '+t.no);}
 // Окно страницы руководства: картинка страницы PDF целиком (рисунки, таблицы) с подсвеченными строками фрагмента,
 // на который сослался агент, и текст страницы абзацами. Широкий экран: рядом; узкий: вкладки «Страница» / «Текст».
 // Картинку можно приблизить: двумя пальцами, двойным нажатием, Ctrl + колесо мыши.
+// Текст страницы: абзацы и таблицы (строка таблицы приходит как {row:[ячейки]}), подсвеченные предложения - <mark>
+function pageHTML(paras){const sx=a=>a.map(x=>x.h?`<mark>${esc(x.t)}</mark>`:esc(x.t)).join(' ');let h='',rows=[];
+ const flush=()=>{if(rows.length){h+=`<table class="ptab">${rows.join('')}</table>`;rows=[];}};
+ for(const p of paras){if(Array.isArray(p)){flush();h+=`<p>${sx(p)}</p>`;}else rows.push(`<tr${p.row.some(c=>c.some(x=>x.h))?' class="hl"':''}>${p.row.map(c=>`<td>${sx(c)}</td>`).join('')}</tr>`);}
+ flush();return h;}
 function openPage(doc,page,q,sq){const m=document.createElement('div');m.className='modal pv';let cur=page,tab='img';
  const qs=()=>cur===page&&(q||sq)?'?q='+encodeURIComponent(q||'')+'&sq='+encodeURIComponent(sq||''):'';
  const render=async()=>{let pg;try{const r=await fetch(`api/manuals/${doc}/${cur}`+qs());if(!r.ok)throw 0;pg=await r.json();}catch(e){m.innerHTML=`<div class="card"><div class="chead"><span>Руководство</span><button class="rbtn" data-x>×</button></div>${note('bad','Не удалось загрузить страницу')}</div>`;return;}
-  const body=pg.paras.map(p=>`<p>${p.map(x=>x.h?`<mark>${esc(x.t)}</mark>`:esc(x.t)).join(' ')}</p>`).join('');
+  const body=pageHTML(pg.paras);
   m.innerHTML=`<div class="card"><div class="chead"><span>${esc(pg.manual)}</span><button class="rbtn" data-x aria-label="Закрыть">×</button></div><div class="pvbar"><span class="mut">Страница PDF ${cur} из ${pg.pages}</span><span class="pvtabs"><button data-tab="img" class="${tab==='img'?'on':''}">Страница</button><button data-tab="txt" class="${tab==='txt'?'on':''}">Текст</button></span></div><div class="pvbody t-${tab}"><div class="pimg"><img src="api/manuals/${doc}/${cur}/image${qs()}" alt="Страница PDF ${cur}" draggable="false"></div><div class="page">${body}</div></div><div class="pnav"><button class="btn" data-p="-1" ${cur<=1?'disabled':''}>← стр. ${cur-1}</button><span class="mut">${cur}</span><button class="btn" data-p="1" ${cur>=pg.pages?'disabled':''}>стр. ${cur+1} →</button></div></div>`;
-  const pe=m.querySelector('.page'),mk=pe.querySelector('mark');if(mk)pe.scrollTop=mk.offsetTop-pe.clientHeight/3;
+  const pe=m.querySelector('.page'),mk=pe.querySelector('mark');if(mk)pe.scrollTop+=mk.getBoundingClientRect().top-pe.getBoundingClientRect().top-pe.clientHeight/3;
   zoomable(m.querySelector('.pimg'),m.querySelector('.pvbody'));};
  $('frame').appendChild(m);render();
- m.onclick=e=>{if(e.target===m||e.target.closest('[data-x]')){m.remove();return;}const t=e.target.closest('[data-tab]');if(t){tab=t.dataset.tab;m.querySelector('.pvbody').className='pvbody t-'+tab;m.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('on',b===t));const pe=m.querySelector('.page'),mk=pe.querySelector('mark');if(tab==='txt'&&mk)pe.scrollTop=mk.offsetTop-pe.clientHeight/3;return;}
+ m.onclick=e=>{if(e.target===m||e.target.closest('[data-x]')){m.remove();return;}const t=e.target.closest('[data-tab]');if(t){tab=t.dataset.tab;m.querySelector('.pvbody').className='pvbody t-'+tab;m.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('on',b===t));const pe=m.querySelector('.page'),mk=pe.querySelector('mark');if(tab==='txt'&&mk)pe.scrollTop+=mk.getBoundingClientRect().top-pe.getBoundingClientRect().top-pe.clientHeight/3;return;}
   const b=e.target.closest('[data-p]');if(b&&!b.disabled){cur=Math.max(1,cur+ +b.dataset.p);render();logEv('ui',`листаем: ${doc}, стр. ${cur}`);}};
  logEv('ui',`открыта страница: ${doc}, стр. ${page}`);}
 // Картинка страницы: вписывается целиком; приближение 1-5x с сохранением точки под пальцами/курсором
@@ -525,7 +532,7 @@ function updSession(){$('sReq').textContent=S.req;$('sLlm').textContent=S.llm;$(
 let diagDone={};
 const HDR=x=>x||{};
 const rnd=()=>Math.random().toString(36).slice(2);
-const CHAT_T=['user','step','warning','check_result','answer','ticket_draft','ticket_sent','error'];
+const CHAT_T=['user','step','warning','check_result','answer','ticket_draft','ticket_sent','error','no_ticket'];
 const lastSid=v=>{const s=v&&v.sessions&&v.sessions[v.sessions.length-1];return s?s.session_id:'';};
 function chatGet(v){try{const o=JSON.parse(localStorage.getItem('dm_chat_'+v.id)||'null');if(o&&o.sid===lastSid(v))return o.items||[];localStorage.removeItem('dm_chat_'+v.id);}catch(e){}return [];}
 function chatPut(v,e){if(!v||!CHAT_T.includes(e.type))return;const items=chatGet(v);items.push(e);try{localStorage.setItem('dm_chat_'+v.id,JSON.stringify({sid:lastSid(v),items}));}catch(x){}}
@@ -546,8 +553,9 @@ function renderEv(e,v,ctx,live){switch(e.type){
   if(e.searched){ctx.chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);ctx.chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
   if(ctx.pendingTk){addChat('<div class="chat-ticket"></div>',v.id);ctx.pendingTk=false;}
   ctx.diag=false;if(live)logEv('answer','ответ агента');break;}
- case 'ticket_draft':if(live||e.status!=='sent'){const p=e.payload,x=e.extra||{};draft={vid:v.id,dbid:e.id,code:p.anomaly_type,conclusion:p.conclusion,prio:PRIO[p.urgency],why:x.why,works:p.operations,parts:p.spare_parts,srcs:x.refs,edited:!!x.edited_by_mechanic,low:!!x.low_confidence,err:e.status==='error'?'ТОиР не принял заявку, отправьте повторно':''};}
+ case 'ticket_draft':if(live||e.status!=='sent'){const p=e.payload,x=e.extra||{};draft={vid:v.id,dbid:e.id,code:p.anomaly_type,conclusion:p.conclusion,prio:PRIO[p.urgency],why:x.why,works:p.operations,parts:p.spare_parts,srcs:x.refs,edited:!!x.edited_by_mechanic,low:!!x.low_confidence,conf:x.confidence,sq:x.signal_quality,err:e.status==='error'?'ТОиР не принял заявку, отправьте повторно':''};}
   ctx.pendingTk=true;ctx.chk.push(['confirm',null,'ждёт механика']);if(live)logEv('ticket_draft','черновик заявки готов');break;
+ case 'no_ticket':ctx.done();addChat(note('warn',e.text,'file-off'),v.id);if(live)logEv('rule','заявка не сформирована: нет инструкции');break;
  case 'ticket_sent':addChat(note('ok',`Заявка ${e.ticket_id} создана в ТОиР`),v.id);break;
  case 'error':ctx.done();addChat(note('bad',e.text),v.id);if(live)logEv('error',esc(e.text));break;}}
 function newCtx(v,live){const ctx={stepId:null,result:null,pendingTk:false,diag:false,chk:[]};
@@ -565,6 +573,7 @@ async function runAgent(url,body,kind,userText,isDiag){if(busy||!sel)return;cons
     while((i=buf.indexOf('\n\n'))>=0){const ch=buf.slice(0,i);buf=buf.slice(i+2);if(!ch.startsWith('data: '))continue;let e;try{e=JSON.parse(ch.slice(6));}catch(x){continue;}renderEv(e,v,ctx,true);chatPut(v,e);}}}
  }catch(x){addChat(note('bad','Нет связи с сервером. Проверьте интернет и повторите.'),v.id);}
  ctx.done();if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(ctx.chk);endReq();renderTicketPane();}
+document.addEventListener('change',e=>{if(!e.target.matches('[data-lowok]')||!draft)return;draft.lowOk=e.target.checked;logEv('ui',draft.lowOk?'механик подтвердил предварительный вывод':'подтверждение снято');refreshDraft();});
 document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))return;addChat(note('warn','Повторите запись на посту (прогретый двигатель, холостой ход), затем снова нажмите «Получить результат диагностики».','refresh'));logEv('ui','повторная проверка запрошена');});
 // Результат по последней проверке уже получен - повторно не запрашиваем, а показываем его в чате
 function runDiag(v){if(diagDone[v.id]){const all=document.querySelectorAll('#chat [data-diag]');const el=all[all.length-1];if(el){el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}return;}
@@ -578,7 +587,7 @@ async function ticketAct(a,btn){const box=btn?btn.closest('.ticket'):document;co
   const r=await fetch('api/tickets/'+draft.dbid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('Не удалось сохранить черновик');return;}
   const t=await r.json();Object.assign(draft,{prio:PRIO[t.payload.urgency],works:t.payload.operations,parts:t.payload.spare_parts,editing:false,edited:true});logEv('ui','черновик изменён механиком');refreshDraft();return;}
  if(a==='send'){if(btn)btn.disabled=true;const vid=draft.vid;logEv('toir','POST /tickets');
-  const r=await fetch('api/tickets/'+draft.dbid+'/send',{method:'POST',headers:HDR()});
+  const r=await fetch('api/tickets/'+draft.dbid+'/send',{method:'POST',headers:HDR({'Content-Type':'application/json'}),body:JSON.stringify({confirmed_low_confidence:!!draft.lowOk})});
   if(!r.ok){let t='ТОиР не принял заявку';try{t=(await r.json()).detail||t;}catch(x){}draft.err=t;logEv('toir','ошибка: '+esc(t));refreshDraft();return;}
   const t=await r.json();S.tk++;S.tools++;draft=null;await loadTickets(vid);addChat(note('ok',`Заявка ${t.toir_ticket_id} создана в ТОиР`),vid);chatPut(V.find(x=>x.id===vid),{type:'ticket_sent',ticket_id:t.toir_ticket_id});
   renderChecks([['confirm',true,'отправлено по кнопке механика']]);logEv('toir','создана '+t.toir_ticket_id);updSession();renderMain();}}
@@ -653,18 +662,20 @@ function trendHTML(v){
 // ===== Голос: ввод (распознавание речи браузера) и озвучка ответа
 const SAY={fail:'Запись непригодна для анализа. Выводов о двигателе не делаю. Повторите запись на прогретом двигателе на холостом ходу.'};let speakingId=null;
 function spkIcons(){document.querySelectorAll('.spk').forEach(b=>{const on=b.dataset.sid===speakingId;b.innerHTML=on?VOL_OFF:VOL;b.title=on?'Остановить':'Озвучить';b.classList.toggle('on',on);});}
-function stopSay(){if(window.speechSynthesis)speechSynthesis.cancel();speakingId=null;spkIcons();}
-function say(id){const text=SAY[id];if(!window.speechSynthesis||!text)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ru-RU';const vs=speechSynthesis.getVoices().filter(x=>x.lang&&x.lang.toLowerCase().startsWith('ru'));if(vs.length)u.voice=vs[0];
- u.onend=u.onerror=()=>{if(speakingId===id){speakingId=null;spkIcons();}};speakingId=id;spkIcons();speechSynthesis.speak(u);logEv('voice','озвучка ответа');}
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false,micStopped=false;
-function micState(on){listening=on;const b=$('bMic');if(b){b.classList.toggle('on',on);b.title=on?'Слушаю… нажмите, чтобы остановить':'Сказать голосом';}const a=$('ask');if(a&&sel)a.placeholder=on?'Слушаю…':'Вопрос по руководству '+sel.engine;}
-function micClick(v){if(busy)return;if(!SR){addChat('<div class="note n-warn"><i class="ti ti-microphone-off"></i>Голосовой ввод в этом браузере недоступен. Напишите вопрос текстом.</div>');return;}
- if(listening){micStopped=true;try{rec.abort();}catch(e){}micState(false);logEv('voice','распознавание остановлено');return;}micStopped=false;stopSay();
- const base=($('ask')?.value||'').trim();rec=new SR();rec.lang='ru-RU';rec.interimResults=true;rec.continuous=false;
- rec.onresult=e=>{if(micStopped)return;let t='';for(const r of e.results)t+=r[0].transcript;const a=$('ask');if(a)a.value=base?base+' '+t.trim():t;};
- rec.onerror=e=>{logEv('voice','ошибка распознавания: '+e.error);if(e.error==='not-allowed'||e.error==='service-not-allowed')addChat('<div class="note n-warn"><i class="ti ti-microphone-off"></i>Нет доступа к микрофону. Разрешите микрофон для этого сайта.</div>');};
- rec.onend=()=>{micState(false);if(micStopped)return;const a=$('ask');if(a&&a.value.trim()){logEv('voice','распознано: '+a.value.trim());runAsk(v);}};
- try{rec.start();micState(true);logEv('voice','слушаю');}catch(e){micState(false);}}
+// Озвучка: голос Silero на нашем сервере (eugene, 48 кГц), текст режем на фразы и играем по очереди,
+// следующую готовим, пока звучит текущая. Если сервер озвучить не может - голос браузера.
+let sayRun=0,sayAudio=null;
+function stopSay(){sayRun++;if(sayAudio){sayAudio.pause();sayAudio=null;}if(window.speechSynthesis)speechSynthesis.cancel();speakingId=null;spkIcons();}
+function sayChunks(t){const out=[];let cur='';for(const s of t.replace(/\s+/g,' ').split(/(?<=[.!?;:])\s+/)){if(cur&&(cur+' '+s).length>280){out.push(cur);cur=s;}else cur=cur?cur+' '+s:s;}if(cur)out.push(cur);return out.flatMap(c=>c.length>800?c.match(/.{1,800}(\s|$)/g):[c]);}
+async function ttsFetch(t){const r=await fetch('api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});if(!r.ok)throw r.status;return URL.createObjectURL(await r.blob());}
+function sayBrowser(id,text,run){if(!window.speechSynthesis)return;const u=new SpeechSynthesisUtterance(text);u.lang='ru-RU';const vs=speechSynthesis.getVoices().filter(x=>x.lang&&x.lang.toLowerCase().startsWith('ru'));if(vs.length)u.voice=vs[0];
+ u.onend=u.onerror=()=>{if(run===sayRun&&speakingId===id){speakingId=null;spkIcons();}};speechSynthesis.speak(u);}
+async function say(id){const text=SAY[id];if(!text)return;stopSay();const run=sayRun;speakingId=id;spkIcons();logEv('voice','озвучка ответа');
+ const parts=sayChunks(text);let next=ttsFetch(parts[0]);
+ for(let i=0;i<parts.length;i++){let url;try{url=await next;}catch(e){if(run===sayRun&&i===0){logEv('voice','голос сервера недоступен, озвучивает браузер');sayBrowser(id,text,run);}return;}
+  if(run!==sayRun)return;if(i+1<parts.length)next=ttsFetch(parts[i+1]);next.catch(()=>{});
+  await new Promise(res=>{sayAudio=new Audio(url);sayAudio.onended=sayAudio.onerror=res;sayAudio.play().catch(res);});URL.revokeObjectURL(url);if(run!==sayRun)return;}
+ if(run===sayRun){speakingId=null;sayAudio=null;spkIcons();}}
 document.addEventListener('click',e=>{const b=e.target.closest('.spk');if(!b)return;e.stopPropagation();if(speakingId===b.dataset.sid){stopSay();logEv('voice','озвучка остановлена');}else say(b.dataset.sid);});
 
 // ===== Оформление: светлая/тёмная, «Стекло»/«Неон 80-х»

@@ -3,7 +3,10 @@
 - Сбой проверки: диагноз не ставится, модель не вызывается, заявки нет (F3, С3).
 - Ссылки: только документы двигателя этой машины и только страницы, найденные поиском
   в этом же запросе (F4: норматив от другого двигателя - ошибка, выдуманных страниц нет).
-- Низкая уверенность ML: вывод помечается предварительным.
+- Точность ML ниже 0,50: заявки нет; ниже 0,60 или запись с помехами: вывод предварительный,
+  заявка только после подтверждения механика.
+- Приоритет: базовая критичность типа неисправности и поправка по оценке отклонения.
+- Заявка: только страницы по узлу неисправности, с дословной цитатой; числа - только со ссылкой.
 """
 import re
 
@@ -40,21 +43,32 @@ def allowed_doc_ids(engine_model: str) -> set[str]:
 _ANY_CITE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
-def split_citations(text: str) -> str:
-    """Модель иногда пишет несколько страниц в одной ссылке: [[yamz536_re:173, 215]] или
-    [[yamz536_re:173; yamz536_rk:20]]. Разбиваем на отдельные ссылки [[doc:стр]]."""
+_PART = re.compile(r"(?:([a-z][a-z0-9_]*)\s*[:,]?\s*)?(?:стр\.?|с\.|p\.?)?\s*(\d+)(?:\s*[-–]\s*(\d+))?", re.I)
+
+
+def split_citations(text: str) -> tuple[str, list[str]]:
+    """Приводит ссылки модели к виду [[doc_id:стр]].
+
+    Модель иногда пишет несколько страниц или диапазон в одной ссылке: [[yamz536_re:173, 215]],
+    [[yamz536_re:173; yamz536_rk:20]], [[yamz536_re:173-175]], [[yamz536_re стр. 173]].
+    Нераспознанные ссылки не теряются молча: возвращаются списком для журнала и техпанели.
+    """
+    unparsed = []
+
     def repl(m: re.Match) -> str:
         out, doc = [], None
-        for part in re.split(r"[,;]", m.group(1)):
-            part = part.strip()
-            mm = re.fullmatch(r"(?:([a-z0-9_]+)\s*:\s*)?(?:стр\.?\s*)?(\d+)", part)
-            if not mm:
-                continue
-            doc = mm.group(1) or doc
-            if doc:
-                out.append(f"[[{doc}:{mm.group(2)}]]")
+        inner = re.sub(r"doc_id\s*[:=]\s*", "", m.group(1), flags=re.I)  # [[doc_id:zmz409_re:128]]
+        for part in re.split(r"[;,](?=\s*(?:[a-z0-9_]+\s*:|\d))", inner):
+            mm = _PART.fullmatch(part.strip())
+            if not mm or not (mm.group(1) or doc):
+                unparsed.append(m.group(0))
+                return ""
+            doc = (mm.group(1) or doc).lower()
+            a = int(mm.group(2))
+            b = int(mm.group(3) or a)
+            out += [f"[[{doc}:{p}]]" for p in range(a, min(b, a + 4) + 1)]
         return " ".join(out)
-    return _ANY_CITE.sub(repl, text)
+    return _ANY_CITE.sub(repl, text), unparsed
 
 
 def filter_citations(text: str, engine_model: str, seen_pages: set[tuple]) -> tuple[str, list[dict], list[str]]:
@@ -62,9 +76,9 @@ def filter_citations(text: str, engine_model: str, seen_pages: set[tuple]) -> tu
 
     Возвращает (текст, список ссылок, список отклонённых ссылок для журнала).
     """
-    text = split_citations(text)
+    text, unparsed = split_citations(text)
     allowed = allowed_doc_ids(engine_model)
-    refs, rejected = [], []
+    refs, rejected = [], [f"нераспознано {u}" for u in unparsed]
 
     def repl(m: re.Match) -> str:
         doc_id, page = m.group(1), int(m.group(2))
@@ -92,25 +106,255 @@ def check_references(refs: list[dict], engine_model: str, seen_pages: set[tuple]
     return ok, bad
 
 
-def urgency_reason(result: dict) -> tuple[str, str]:
-    """Приоритет заявки по полям ML - считает код, модель только объясняет.
-
-    high: оценка отклонения >= 0.8 при уверенности >= LOW_CONFIDENCE;
-    medium: остальные отклонения; low: вывод предварительный (низкая уверенность).
-    """
-    score, conf = result.get("anomaly_score") or 0, result.get("confidence") or 0
-    n = lambda x: f"{x:.2f}".replace(".", ",")
-    if score >= 0.8:
-        urgency, why = "high", f"Сильное отклонение звука от нормы: оценка {n(score)} при точности распознавания {n(conf)}"
-    else:
-        urgency, why = "medium", f"Отклонение от нормы: оценка {n(score)} при точности распознавания {n(conf)}"
-    if is_low_confidence(result):
-        why += (f". Вывод предварительный: точность распознавания низкая"
-                f"{', запись с помехами' if result.get('signal_quality') == 'warning' else ''}"
-                " - машина направляется на повторную дефектовку")
-    return urgency, why
-
-
 def recheck_operation(result: dict) -> str:
     """Обязательная первая работа при низкой точности ML (механик её не убирает)."""
     return "Повторная запись звука на посту и повторная проверка: вывод ML предварительный (низкая точность распознавания)"
+
+
+# ---------- Пороги точности распознавания (порог задаём сами и показываем механику) ----------
+NO_TICKET_CONFIDENCE = 0.50  # ниже - заявка не формируется, только повторная запись
+
+
+def n2(x) -> str:
+    return f"{x:.2f}".replace(".", ",")
+
+
+def is_no_ticket(result: dict) -> bool:
+    c = result.get("confidence")
+    return result.get("status") == "anomaly" and c is not None and c < NO_TICKET_CONFIDENCE
+
+
+def warning_text(result: dict) -> str | None:
+    """Предупреждение о качестве вывода: показывается всегда, как бы ни был получен результат."""
+    if is_check_failed(result):
+        return None
+    c, parts = result.get("confidence"), []
+    if result.get("signal_quality") == "warning":
+        parts.append("запись с помехами")
+    if c is not None and c < LOW_CONFIDENCE:
+        parts.append(f"точность распознавания {n2(c)} ниже порога {n2(LOW_CONFIDENCE)}")
+    if not parts:
+        return None
+    head = "; ".join(parts)
+    head = head[0].upper() + head[1:]
+    if is_no_ticket(result):
+        return (f"{head}. Точность ниже {n2(NO_TICKET_CONFIDENCE)}: вывод ненадёжен, "
+                "заявка не формируется. Повторите запись на посту.")
+    if result.get("status") != "anomaly":
+        return f"{head}. Вывод предварительный."
+    return (f"{head}. Вывод предварительный: заявку можно отправить только после "
+            "вашего подтверждения, первой работой в ней будет повторная проверка.")
+
+
+def no_ticket_text(result: dict) -> str:
+    """Ответ при точности ниже порога: модель не вызывается, заявки нет."""
+    return (f"**Вывод ненадёжен: точность распознавания {n2(result.get('confidence') or 0)} "
+            f"ниже порога {n2(NO_TICKET_CONFIDENCE)}.**\n\n"
+            f"ML предполагает: {result.get('anomaly_title') or result.get('anomaly_type')} "
+            f"(оценка отклонения {n2(result.get('anomaly_score') or 0)}), но по такой записи диагноз не ставлю "
+            "и заявку не формирую.\n\n"
+            "Что сделать:\n"
+            "1. Прогрейте двигатель, оставьте холостой ход.\n"
+            "2. Проверьте, что рядом с постом нет посторонних шумов.\n"
+            "3. Повторите запись и запросите результат снова.")
+
+
+# ---------- Тип неисправности: базовая критичность и узел (для приоритета и применимости страницы) ----------
+# Критичность - инженерная оценка последствий при эксплуатации (обоснование в README):
+# high - угроза разрушения двигателя или безопасности (смазка, перегрев, цепь ГРМ, тормоза и рулевое);
+# medium - прогрессирующий износ или отказ узла без немедленной угрозы; low - вспомогательные системы.
+# Узел - группы основ слов: страница относится к узлу, если в ней есть все основы хотя бы одной группы.
+FAULTS = {
+    "F01": ("medium", [["клапан"], ["коромысл"], ["толкател"], ["газораспредел"]]),
+    "F02": ("high", [["давлен", "масл"], ["масл", "насос"], ["манометр"]]),
+    "F03": ("high", [["перегрев"], ["охлажд"], ["термостат"], ["радиатор"], ["прокладк", "головк"]]),
+    "F04": ("medium", [["ремн"], ["ремен"], ["натяжн"], ["шкив"]]),
+    "F05": ("low", [["генератор"]]),
+    "F06": ("medium", [["сцеплен"]]),
+    "F07": ("medium", [["коробк", "передач"], ["кпп"]]),
+    "F08": ("medium", [["топлив"], ["форсунк"], ["тнвд"]]),
+    "F09": ("medium", [["турбокомпрессор"], ["наддув"], ["турбин"]]),
+    "F10": ("high", [["компрессор"], ["гур"], ["усилител", "рул"]]),
+    "F11": ("low", [["рециркуляц"], ["egr"]]),
+    "F12": ("low", [["зажиган"], ["свеч"], ["катушк"]]),
+    "F13": ("medium", [["бензин"], ["топлив"], ["форсунк"], ["дроссел"]]),
+    "F14": ("high", [["цеп"], ["натяжител"], ["грм"]]),
+}
+LEVELS = ["low", "medium", "high"]
+RU_LEVEL = {"low": "низкая", "medium": "средняя", "high": "высокая"}
+URGENCY_MEANING = {
+    "high": "дефектовка до выпуска в рейс",
+    "medium": "дефектовка на ближайшем ТО, машина работает под наблюдением",
+    "low": "машина работает, узел проверяется на следующей проверке",
+}
+SCORE_UP, SCORE_DOWN = 0.85, 0.60  # поправка по оценке отклонения - не больше одного уровня
+
+
+def urgency_reason(result: dict) -> tuple[str, str]:
+    """Приоритет считает код: базовая критичность типа неисправности плюс-минус один уровень по оценке отклонения."""
+    code = result.get("anomaly_type")
+    base = FAULTS.get(code, ("medium", []))[0]
+    score, conf = result.get("anomaly_score") or 0, result.get("confidence") or 0
+    i = LEVELS.index(base)
+    if score >= SCORE_UP:
+        i, adj = min(i + 1, 2), f"сильное отклонение (оценка {n2(score)}, порог {n2(SCORE_UP)}): на уровень выше"
+    elif score < SCORE_DOWN:
+        i, adj = max(i - 1, 0), f"слабое отклонение (оценка {n2(score)}, ниже {n2(SCORE_DOWN)}): на уровень ниже"
+    else:
+        adj = f"оценка отклонения {n2(score)}: без поправки"
+    urgency = LEVELS[i]
+    why = (f"Базовая критичность {code} «{result.get('anomaly_title') or ''}»: {RU_LEVEL[base]}; {adj}; "
+           f"точность распознавания {n2(conf)}. Это значит: {URGENCY_MEANING[urgency]}")
+    if is_low_confidence(result):
+        why += (". Вывод предварительный"
+                f"{' (запись с помехами)' if result.get('signal_quality') == 'warning' else ''}"
+                ": первой работой повторная проверка")
+    return urgency, why
+
+
+def _stems(text: str) -> set[str]:
+    from app.rag import tokenize
+    return set(tokenize(text))
+
+
+def node_query(result: dict) -> str:
+    """Запрос для первого поиска по неисправности: название и слова узла."""
+    words = " ".join(" ".join(g) for g in FAULTS.get(result.get("anomaly_type"), (None, []))[1])
+    return f"{result.get('anomaly_title') or ''} {words}".strip()
+
+
+def page_matches_node(page_text: str, code: str) -> bool:
+    """Страница относится к узлу из типа неисправности (иначе это не инструкция по этой неисправности)."""
+    groups = FAULTS.get(code, (None, []))[1]
+    if not groups:
+        return True
+    st = _stems(page_text)
+    return any(all(any(t.startswith(k) for t in st) for k in g) for g in groups)
+
+
+def is_toc_page(page_text: str) -> bool:
+    """Оглавление: много строк, оканчивающихся номером страницы (часто через точки)."""
+    lines = [ln.strip() for ln in page_text.split(chr(10)) if ln.strip()]
+    if not lines:
+        return False
+    tail = sum(1 for ln in lines if re.search(r"(\.{3,}|\s)\d{1,3}$", ln) and len(ln) > 8)
+    head = " ".join(lines[:3]).lower()
+    return (tail >= 8 and tail / len(lines) > 0.35) or (("содержание" in head or "оглавление" in head) and tail >= 4)
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^0-9a-zа-яё]", "", s.lower().replace("ё", "е"))
+
+
+def quote_on_page(quote: str, page_text: str) -> bool:
+    """Дословная цитата есть на странице (без учёта регистра, пробелов, знаков и переносов)."""
+    q, p = _norm(quote), _norm(page_text)
+    if len(q) < 15:
+        return False
+    if q in p:
+        return True
+    words = [_norm(w) for w in quote.split() if _norm(w)]  # допуск на ошибки распознавания: 80% троек слов
+    shingles = ["".join(words[i:i + 3]) for i in range(max(1, len(words) - 2))]
+    return sum(1 for s in shingles if s in p) / len(shingles) >= 0.8
+
+
+_NUM = re.compile(r"\d+(?:[.,]\d+)?")
+_BAN = re.compile(r"эксплуатац[^.]{0,40}(не допуска|запрещ)|запрещ\w* эксплуатац|прекрат\w* эксплуатац|"
+                  r"не выпуска\w*|выпуск\w* в рейс запрещ|нельзя (выпуска|эксплуатир)", re.I)
+_NOT_NORM = re.compile(r"(стр\.?|страниц\w*|рисун\w*|рис\.|таблиц\w*|F\d\d|S-\d+|№\s?\d+)\s*\d*", re.I)
+
+
+def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tuple[str, list[str]]:
+    """Числа из руководства только со ссылкой: строка с числом без [[...]] убирается.
+
+    Не проверяются: раздел наблюдений (там числа из результата проверки ML), заголовки,
+    нумерация пунктов, номера страниц, рисунков, таблиц, кодов неисправностей и проверок.
+    """
+    out, removed, section = [], [], ""
+    for line in text.split(chr(10)):
+        s = line.strip()
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^#+\s*(.+)$", s)
+        if h:
+            section = h.group(1).lower()
+            out.append(line)
+            continue
+        body = re.sub(r"\[\[[^\]]*\]\]", "", s)
+        body = re.sub(r"^(\d+[.)]|[-•*])\s+", "", body)
+        body = _NOT_NORM.sub("", body)
+        for x in allowed_numbers:  # оценка и точность из результата проверки ML - не нормативы
+            body = body.replace(x, "")
+        ban = _BAN.search(s) and "[[" not in s  # запрет эксплуатации - только со ссылкой на страницу руководства
+        if not ban and ("наблюд" in section or "слышно" in section or "[[" in s or not _NUM.search(body)):
+            out.append(line)
+        else:
+            removed.append(s)
+    return chr(10).join(out), removed
+
+
+# Общие слова действий и связки: есть в любой работе, ничего не доказывают
+_GENERIC = ("провер", "замен", "регулир", "отрегул", "необходим", "осмотр", "выполн", "состоян", "налич",
+            "устран", "дефектовк", "ремонт", "работ", "при", "после", "перед", "также", "затем", "случа")
+_SECTION_NO = re.compile(r"\b(пп?\.|п\.п\.|раздел\w*|глав\w*)\s*\d+(\.\d+)*", re.I)
+
+
+def op_supported(op: str, pages_text: str) -> bool:
+    """Работа или утверждение опирается на страницы-источники.
+
+    Все числа (нормативы, номера деталей) должны быть на этих страницах; номера пунктов и разделов не в счёт.
+    Если числа есть и все нашлись - опора подтверждена. Иначе хотя бы половина значимых слов
+    (без общих слов действий) должна встречаться на страницах.
+    """
+    pt = _norm(pages_text)
+    nums = _NUM.findall(_SECTION_NO.sub("", op))
+    for num in nums:
+        if _norm(num) not in pt:
+            return False
+    words = {w for w in _stems(op) if len(w) >= 4 and not w[:1].isdigit() and not w.startswith(_GENERIC)}
+    if not words:
+        return True
+    share = len(words & _stems(pages_text)) / len(words)
+    return share >= (0.3 if nums else 0.5)
+
+
+def no_instruction_text(result: dict, engine: str, problem: str = "") -> str:
+    """Заявка не сформирована: применимой инструкции нет. Механик получает рекомендацию на дефектовку
+    с результатом проверки и оформляет её вне продукта по порядку автопарка."""
+    title = result.get("anomaly_title") or result.get("anomaly_type")
+    return (f"Заявка не сформирована: в руководстве на двигатель {engine} не найдена инструкция по неисправности "
+            f"«{title}»{f' ({problem})' if problem else ''}.\n\n"
+            f"Рекомендация на дефектовку: проверка {result.get('session_id')}, {result.get('anomaly_type')} «{title}», "
+            f"оценка отклонения {n2(result.get('anomaly_score') or 0)}, точность распознавания "
+            f"{n2(result.get('confidence') or 0)}. Оформите дефектовку по порядку автопарка.")
+
+
+def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, list[str]]:
+    """Строка со ссылкой должна опираться на эту страницу: её числа и большая часть слов есть на ней.
+
+    Иначе это гипотеза, оформленная как цитата руководства (ошибка): строку убираем.
+    page_text(doc_id, page) -> текст страницы. Разделы наблюдений, гипотез, источников и ограничений
+    не проверяются (в гипотезах ссылки просто снимаются).
+    """
+    out, removed, section = [], [], ""
+    for line in text.split(chr(10)):
+        s = line.strip()
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^#+\s*(.+)$", s)
+        if h:
+            section = h.group(1).lower()
+            out.append(line)
+            continue
+        cites = CITE.findall(s)
+        if not cites or any(k in section for k in ("наблюд", "слышно", "источник", "огранич")):
+            out.append(line)
+            continue
+        if "гипотез" in section:
+            out.append(CITE.sub("", line).rstrip())
+            continue
+        body = re.sub(r"^(\d+[.)]|[-•*])\s+", "", CITE.sub("", s)).strip()
+        texts = [page_text(d, int(p)) or "" for d, p in cites]
+        if node:  # ответ по неисправности: проверки и ремонт - только со страниц про этот узел
+            texts = [t for t in texts if page_matches_node(t, node)]
+        if texts and op_supported(body, chr(10).join(texts)):
+            out.append(line)
+        else:
+            removed.append(s)
+    return chr(10).join(out), removed
