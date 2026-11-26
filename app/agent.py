@@ -351,6 +351,18 @@ class Run:
         if resolved:
             store.log_event("resolved_disputed_ops", {"ops": resolved}, request_id=self.id,
                             vehicle_id=self.v["vehicle_id"])
+        # Запчасти: если агент их не указал, инструмент заявки подбирает детали узла из руководства,
+        # подходящие к работам заявки (F7: работы и запчасти из базы знаний)
+        given = [str(x).strip() for x in (args.get("spare_parts") or []) if str(x).strip()]
+        if not given and r.get("anomaly_type"):
+            for c in rag.parts_for(self.engine, rules.FAULTS.get(r["anomaly_type"], (None, []))[1], limit=12):
+                name = re.sub(r"\s*\|\s*", " ", c["text"]).strip()
+                if rules.part_fits_works(name, ops) and len(given) < 6:
+                    self.seen_pages.add((c["doc_id"], c["page"]))
+                    given.append(name)
+            if given:
+                store.log_event("parts_from_manual", {"parts": given}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
+        args = {**args, "spare_parts": given}
         # Запчасти: обозначение и название должны быть на страницах, найденных поиском в этом запросе
         seen_text = chr(10).join(rag.page_text(d, p) or "" for d, p in self.seen_pages)
         parts, bad_parts = [], []
