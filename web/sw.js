@@ -1,6 +1,6 @@
 // Service worker: приложение открывается с главного экрана телефона и показывает оболочку без сети.
 // Запросы к агенту и данным (/api) не кешируются никогда: механик всегда видит свежий результат.
-const CACHE = 'mechanic-v1';
+const CACHE = 'mechanic-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/head_light_192.png', '/icons/head_light_32.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
