@@ -54,7 +54,8 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 **Источник** - список страниц руководства, на которые опирается ответ, ссылками [[doc_id:страница]].
 **Ограничения** - чего в руководстве нет или что требует проверки на месте.
 Запрет эксплуатации или выпуска в рейс пиши только если на найденной странице руководства прямо сказано, что эксплуатация запрещена, и ставь ссылку на неё; иначе это рекомендация.
-Для запчастей поищи в руководстве обозначения деталей этого узла (например «<узел> обозначение» или «<деталь> каталожный номер»); в черновик бери только то, что есть на найденных страницах.
+По запросу диагностики сначала получи результат проверки (get_check_result), дальше действуй по результату: норма - коротко, отклонение - найди процедуру узла в руководстве, запчасти узла (find_parts) и подготовь черновик заявки.
+Запчасти бери из find_parts (обозначения деталей узла из руководства) - только нужные для работ заявки.
 Сначала найди процедуру проверки, регулировки или ремонта именно этого узла, затем вызови draft_ticket и после этого дай ответ механику. В draft_ticket к каждой странице приложи дословную цитату с неё (одно-два предложения), работы бери только с этих страниц. Оглавление и общие разделы, где узел не упомянут, не годятся. Если подходящей процедуры нет - draft_ticket не вызывай и скажи, что в руководстве на этот двигатель нет инструкции по этой неисправности. Номер черновика не упоминай: механик видит черновик рядом с ответом.
 
 На вопрос механика отвечай по той же логике, но только нужными пунктами; источник обязателен."""
@@ -72,6 +73,9 @@ FUNCTIONS = [
      "parameters": {"type": "object", "properties": {
          "query": {"type": "string", "description": "Что искать: узел, симптом, операция, норматив"}},
          "required": ["query"]}},
+    {"name": "find_parts",
+     "description": "Детали узла текущей неисправности с обозначениями (каталожными номерами) из руководств двигателя этой машины. Вызывать после get_check_result с отклонением.",
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "show_in_chat",
      "description": "Прокрутить чат механика к черновику заявки или к результату диагностики и подсветить его.",
      "parameters": {"type": "object", "properties": {
@@ -146,6 +150,8 @@ class Run:
         self._remember_numbers({k: self.v.get(k) for k in ("vehicle_id", "garage_no", "model", "make", "engine_model")})
         self.conflicts: dict[str, dict] = {}  # противоречия в документации, найденные в этом запросе
         self.recur = ""                   # повтор того же дефекта в истории машины (строка для наблюдений)
+        self.mode = "ask"                 # ask - вопрос в чате, diagnose - кнопка «Получить результат диагностики»
+        self.result_nudged = False
         self.diagnosed = True             # диагностика по последней проверке уже была в этом чате
         self.allow_draft = True           # в чате после диагностики черновик уже есть - второй не делаем
         self.need_diag_first = False      # вопрос в чате, а диагностики по последней проверке ещё не было
@@ -226,19 +232,29 @@ class Run:
                 return {"error": str(e)}, evs
             out = _short_result(self.result)
             self._remember_numbers(out)
+            evs.append({"type": "check_result", "result": self.result,
+                        "low_confidence": rules.is_low_confidence(self.result)})
+            if self.result.get("status") == "anomaly" and sid == services.latest_session(self.v["vehicle_id"])["session_id"]:
+                # предохранители для ответа по отклонению: только с поиском по руководству, узел для проверки страниц
+                self.node = self.result.get("anomaly_type") or ""
+                self.require_search = True
+                self.recur = rules.recurrence_note(self.v["sessions"], self.result, store.tickets_for(self.v["vehicle_id"]))
             evs += self.quality_warning()
             if rules.is_check_failed(self.result):
                 out["rule"] = "Сбой проверки: о двигателе выводов не делать, попросить повторить запись."
             elif rules.is_no_ticket(self.result):
                 out["rule"] = "Точность ниже порога: вывод ненадёжен, заявку не делать, попросить повторить запись."
             elif rules.is_low_confidence(self.result):
-                out["rule"] = "Низкая точность распознавания: вывод только предварительный, нужна повторная проверка."
+                out["rule"] = ("Низкая точность распознавания: явно скажи, что вывод предварительный и машина направляется "
+                               "на повторную дефектовку. В заявку включай только проверки и дефектовку по руководству, "
+                               "без ремонтных работ: повторную запись код добавит сам.")
             if self.result.get("status") == "anomaly" and not rules.is_no_ticket(self.result):
                 urg, _ = rules.urgency_reason(self.result)
                 out["priority"] = rules.PRIORITY_RU[urg]
                 out["priority_meaning"] = rules.URGENCY_MEANING[urg]
             elif self.result.get("status") == "normal":
                 out["priority_meaning"] = "отклонений нет, машина работает"
+                out["rule"] = "Отклонений нет: коротко скажи, что двигатель в норме; руководство не ищи, заявку не делай."
                 prev = [x for x in self.v["sessions"] if x.get("status") == "anomaly"
                         and x.get("session_id") != self.result.get("session_id")]
                 if prev:
@@ -259,11 +275,10 @@ class Run:
         if name == "search_manual":
             q = (args.get("query") or "").strip()
             evs.append(self.ev("step", text=f"Ищу в руководстве {self.engine}: «{q}»", tool=name))
-            if args.get("node_first") and self.result:
-                # Первый поиск по неисправности: в запросе слова узла, страницы про узел - первыми
-                hits = rag.search(rules.node_query(self.result), self.engine, k=10)
-                code = self.result.get("anomaly_type")
-                hits = sorted(hits, key=lambda h: not rules.page_matches_node(h["text"], code))[:5]
+            if self.node and self.mode == "diagnose":
+                # диагностика отклонения: к запросу добавляются слова узла, страницы про узел - первыми
+                hits = rag.search(f"{q} {rules.node_query(self.result)}", self.engine, k=10)
+                hits = sorted(hits, key=lambda h: not rules.page_matches_node(h["text"], self.node))[:5]
             else:
                 hits = rag.search(q, self.engine, k=5)
             for h in hits:
@@ -289,6 +304,17 @@ class Run:
                                          "Не называй ни одну формулировку бесспорной; в проверках и в заявке укажи "
                                          "консервативный вариант из decision и не упоминай спорное условие вне раздела «Ограничения».")
             return out, evs
+        if name == "find_parts":
+            if not self.node:
+                return {"error": "Сначала получи результат проверки с отклонением"}, evs
+            evs.append(self.ev("step", text=f"Ищу в руководстве {self.engine} запчасти узла", tool=name))
+            cand = rag.parts_for(self.engine, rules.FAULTS.get(self.node, (None, []))[1])
+            for c in cand:
+                self.seen_pages.add((c["doc_id"], c["page"]))
+                self.page_queries.setdefault((c["doc_id"], c["page"]), c["designation"])
+            if not cand:
+                return {"found": [], "note": "Обозначений деталей этого узла в руководствах не найдено"}, evs
+            return {"found": cand}, evs
         if name == "show_in_chat":
             what = "ticket" if args.get("what") == "ticket" else "result"
             last = services.latest_session(self.v["vehicle_id"])["session_id"]
@@ -431,6 +457,12 @@ class Run:
                 messages.append({"role": "assistant", "content": msg.get("content") or ""})
                 messages.append({"role": "user", "content": "Ответ пока не показан механику: сначала вызови draft_ticket - работы только со страниц с процедурой этого узла, к каждой странице дословная цитата. Если подходящей процедуры в найденном нет - поищи ещё; если её нет в руководстве, повтори ответ и скажи об этом."})
                 continue
+            if not fc and self.mode == "diagnose" and not self.result and not self.result_nudged:
+                self.result_nudged = True
+                store.log_event("rule_result_required", {}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
+                messages.append({"role": "assistant", "content": msg.get("content") or ""})
+                messages.append({"role": "user", "content": "Ответ не принят: сначала получи результат проверки (get_check_result)."})
+                continue
             content0 = (msg.get("content") or "").strip()
             technical = bool(rules.unsupported_lines(content0, self.ml_numbers())[1])  # есть нормативы без ссылки
             if (not fc and self.require_search and not self.seen_pages and not self.nudged and technical
@@ -535,64 +567,20 @@ def _system(run: Run) -> dict:
 
 
 async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
-    """Кнопка «Получить результат диагностики» (F2): код вызывает ML, дальше решает агент.
+    """Кнопка «Получить результат диагностики» (F2): просьба механика агенту, инструменты агент выбирает сам (F5).
 
-    Сбой проверки и норма обрабатываются без лишних шагов; при сбое модель не вызывается (F3).
+    Код не ведёт сценарий, а только проверяет результаты инструментов и ответ (предохранители):
+    при сбое записи выводов нет (F3), заявка - только по странице узла с цитатой, ответ по отклонению -
+    только после поиска по руководству и с черновиком заявки либо с объяснением, почему его нет.
     """
     run = Run(vehicle_id)
+    run.mode = "diagnose"
     store.log_event("diagnose_click", actor="mechanic", request_id=run.id, vehicle_id=vehicle_id)
-    sess = services.latest_session(vehicle_id)
-    yield run.ev("step", text=f"Запрашиваю результат проверки {sess['session_id']}", tool="get_check_result")
-    try:
-        run.result = await services.diagnose(vehicle_id, sess["session_id"])
-    except services.ServiceError as e:
-        yield run.ev("error", text=str(e))
-        return
-    yield {"type": "check_result", "result": run.result, "low_confidence": rules.is_low_confidence(run.result)}
-    if rules.is_check_failed(run.result):
-        yield run.ev("answer", text=rules.check_failed_text(run.result), refs=[])
-        yield run.metrics()
-        yield {"type": "done"}
-        return
-    for e in run.quality_warning():
-        yield e
-    if rules.is_no_ticket(run.result):  # точность ниже порога: модель не вызываем, заявки нет
-        yield run.ev("answer", text=rules.no_ticket_text(run.result), refs=[])
-        yield run.metrics()
-        yield {"type": "done"}
-        return
-    user = ("Механик нажал «Получить результат диагностики». Результат проверки:\n"
-            + json.dumps(_short_result(run.result), ensure_ascii=False))
-    if run.result["status"] == "anomaly":
-        run.require_search = True  # по отклонению ответ принимается только после поиска процедуры в руководстве
-    if run.result["status"] == "normal":
-        user += "\nОтклонений нет: коротко скажи, что двигатель в норме и можно продолжать эксплуатацию. Руководство не ищи, заявку не делай."
-    elif rules.is_low_confidence(run.result):
-        user += ("\nТочность распознавания низкая: явно скажи, что вывод предварительный и машина направляется на повторную дефектовку. "
-                 "В заявку включай только проверки и дефектовку по руководству, без ремонтных работ: повторную запись код добавит сам.")
-    if run.result["status"] == "anomaly":
-        # Первый поиск по узлу неисправности делает код: модели не нужен лишний вызов, чтобы его начать
-        run.node = run.result.get("anomaly_type") or ""
-        run.recur = rules.recurrence_note(run.v["sessions"], run.result, store.tickets_for(vehicle_id))
-        q = run.result.get("anomaly_title") or run.result.get("anomaly_type")
-        found, evs = await run.tool("search_manual", {"query": q, "node_first": True})
-        for e in evs:
-            yield e
-        # Кандидаты в запчасти узла: строки руководства с обозначениями деталей (поиск по словам их не находит)
-        cand = rag.parts_for(run.engine, rules.FAULTS.get(run.node, (None, []))[1])
-        for c in cand:
-            run.seen_pages.add((c["doc_id"], c["page"]))
-            run.page_queries.setdefault((c["doc_id"], c["page"]), c["designation"])
-        if cand:
-            user += ("\nДетали этого узла с обозначениями из руководства (кандидаты для spare_parts, бери только те, "
-                     "что нужны для работ, наименование и обозначение - как в строке): "
-                     + json.dumps(cand, ensure_ascii=False))
-        user += (f"\nКод уже выполнил search_manual по запросу «{q}»: "
-                 + json.dumps(found, ensure_ascii=False)
-                 + "\nЕсли процедуры узла здесь нет, поищи ещё конкретными словами.")
+    user = "Механик нажал «Получить результат диагностики» по последней проверке этой машины."
     async for e in run.loop([_system(run), {"role": "user", "content": user}]):
         yield e
-    if run.result["status"] == "anomaly" and not run.drafted:
+    if run.result and run.result.get("status") == "anomaly" and not run.drafted and not rules.is_no_ticket(run.result) \
+            and not rules.is_check_failed(run.result):
         yield run.ev("no_ticket", text=rules.no_instruction_text(run.result, run.engine, run.draft_problem))
     yield {"type": "done"}
 
