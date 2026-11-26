@@ -174,7 +174,9 @@ def main() -> None:
                 page.evaluate("(()=>{const pm=document.getElementById('paneMain');const d=lastDiagEl();if(d)pm.scrollTop=d.offsetTop-40;})()")
                 page.wait_for_timeout(600)
                 has_pin = page.locator('[data-pin="tk"]').count() > 0
-                if has_pin:
+                if tag == "web":  # на широком экране черновик всегда виден в правой панели - плашка не нужна
+                    check(f"[{tag}] плашки «Заявка» нет: черновик виден справа", not has_pin)
+                elif has_pin:
                     page.click('[data-pin="tk"]')
                     page.wait_for_timeout(1000)
                     under = page.evaluate("(()=>{const t=lastTkEl().getBoundingClientRect().top,c=document.getElementById('vcard').getBoundingClientRect().bottom;return Math.round(t-c)})()")

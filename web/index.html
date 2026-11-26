@@ -596,7 +596,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))retur
 // Результат по последней проверке уже получен - повторно не запрашиваем, а показываем его в чате
 function showEl(el){if(!el)return;btmTok++;const pm=$('paneMain'),vc=$('vcard');const off=el.getBoundingClientRect().top-(vc?Math.max(vc.getBoundingClientRect().bottom,pm.getBoundingClientRect().top+(vc.classList.contains('min')?0:90)):pm.getBoundingClientRect().top)-8;pm.scrollBy({top:off,behavior:'smooth'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
 const lastDiagEl=()=>{const a=document.querySelectorAll('#chat [data-diag]');return a[a.length-1]||null;};
-const lastTkEl=()=>{const a=[...document.querySelectorAll('#chat .chat-ticket')].filter(x=>x.innerHTML.trim());return a[a.length-1]||null;};
+const lastTkEl=()=>{const a=[...document.querySelectorAll('#chat .chat-ticket')].filter(x=>x.innerHTML.trim()&&x.offsetParent);return a[a.length-1]||null;};  // видимый черновик (на широком экране он в правой панели)
 // Плашки над строкой ввода: черновик заявки и результат диагностики, когда они ушли из вида
 function updPins(){const box=$('pins'),pane=$('paneMain');if(!box||!pane||!sel)return;const pr=pane.getBoundingClientRect(),vc=$('vcard'),cb=document.querySelector('.cbar');
  const top=vc?vc.getBoundingClientRect().bottom:pr.top,bot=cb?cb.getBoundingClientRect().top:pr.bottom;
