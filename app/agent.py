@@ -454,7 +454,7 @@ class Run:
                 text, refs, rejected = rules.filter_citations(content, self.engine, self.seen_pages)
                 self._tag(refs)
                 text, removed = rules.unsupported_lines(text, self.ml_numbers())
-                text, unverified = rules.unverified_cited_lines(text, rag.page_text, self.node)
+                text, unverified = rules.unverified_cited_lines(text, rag.page_text, self.node, self.ml_numbers())
                 if unverified:  # утверждение со ссылкой, которого нет на этой странице, - гипотеза под видом цитаты
                     store.log_event("removed_unverified", {"lines": unverified}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
