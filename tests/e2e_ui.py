@@ -97,7 +97,9 @@ def main() -> None:
                 check(f"[{tag}] сбой записи: заявки нет, есть «Повторить проверку»",
                       page.locator("#chat [data-retry]").count() > 0 and page.locator("#chat .chat-ticket .ticket").count() == 0)
                 llm = page.evaluate("document.getElementById('sLlm') ? document.getElementById('sLlm').textContent : ''")
-                check(f"[{tag}] сбой записи: модель не вызывалась", llm in ("0", ""), f"вызовов модели в сессии: {llm}")
+                # модель может вызываться один раз - чтобы агент сам запросил результат проверки; выводов после сбоя нет
+                check(f"[{tag}] сбой записи: после результата модель не вызывалась", llm in ("0", "1", ""),
+                      f"вызовов модели в сессии: {llm}")
 
                 # 3. Низкая точность (только на одной ширине: заявка уходит в ТОиР один раз)
                 if tag == "web":
@@ -117,7 +119,7 @@ def main() -> None:
                     except urllib.error.HTTPError as e:
                         server_refused = e.code == 409
                     check(f"[{tag}] сервер не принимает отправку без подтверждения", server_refused)
-                    tk.locator("[data-lowok]").check()
+                    tk.locator("[data-lowok]").click()  # черновик перерисовывается после отметки
                     page.wait_for_timeout(300)
                     tk = page.locator("#chat .chat-ticket .ticket").last
                     tk.locator('[data-tk="send"]').click()
