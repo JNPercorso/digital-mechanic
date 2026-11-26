@@ -223,6 +223,33 @@ def search(query: str, engine_model: str, k: int = 6) -> list[dict]:
     ]
 
 
+PART_NO = re.compile(r"\b\d{3,6}[.-]\d{6,7}(?:[-.][\wА-ЯЁ]+)?")  # обозначение детали: 236-1007118-В
+_NOT_PART = re.compile(r"двигател|руководств|ГОСТ|для снятия|схема|рис\.|ф\.\s*«|приспособлен", re.I)
+
+
+def parts_for(engine_model: str, node_groups: list[list[str]], limit: int = 8) -> list[dict]:
+    """Кандидаты в запчасти узла: строки руководств двигателя с обозначением детали, где упомянут узел.
+
+    Обычный поиск по словам обозначения не находит, поэтому смотрим строки страниц напрямую.
+    Короткие строки «Наименование обозначение» и строки таблиц - первыми.
+    """
+    out, seen = [], set()
+    for m in manuals_for_engine(engine_model):
+        for i, t in enumerate(_pages().get(m.doc_id, [])):
+            lines = t.split(CHR10)
+            for j, ln in enumerate(lines):
+                for d in PART_NO.findall(ln):
+                    ctx = ln if len(ln) > 25 else (f"{lines[j - 1]} {ln}" if j else ln)
+                    if d in seen or _NOT_PART.search(ctx) or len(ctx) > 140:
+                        continue
+                    st = tokenize(ctx)
+                    if any(all(any(x.startswith(k) for x in st) for k in g) for g in node_groups):
+                        seen.add(d)
+                        out.append({"designation": d, "text": ctx.strip(), "doc_id": m.doc_id, "page": i + 1})
+    out.sort(key=lambda x: len(x["text"]))
+    return out[:limit]
+
+
 def page_text(doc_id: str, page: int) -> str | None:
     """Текст страницы PDF (нумерация с 1) для окна просмотра."""
     texts = _pages().get(doc_id)

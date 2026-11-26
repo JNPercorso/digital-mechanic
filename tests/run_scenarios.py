@@ -102,6 +102,8 @@ def summarize(kind: str, v: dict, evs: list[dict]) -> dict:
         "seconds": m.get("seconds"), "llm_calls": m.get("llm_calls"), "tokens_in": m.get("tokens_in"),
         "tokens_out": m.get("tokens_out"), "cost_rub": m.get("cost_rub"),
         "_rules": rules, "_answer": ans[-1]["text"] if ans else "",
+        "_answer_empty": bool(ans) and not ans[-1]["text"].strip(),
+        "parts": len(draft["payload"].get("spare_parts") or []) if draft else 0,
         "_checked": any(e["type"] == "check_result" or e.get("tool") == "get_check_result" for e in evs),
     }
 
@@ -120,6 +122,10 @@ def problems(s: dict) -> list[str]:
         p.append("нет ни заявки, ни объяснения, почему её нет")
     if s["status"] == "normal" and s["draft"]:
         p.append("заявка при норме")
+    if s["_answer_empty"]:
+        p.append("пустой ответ механику")
+    if s["scenario"] == "diagnose" and s["draft"] and not s["parts"]:
+        p.append("в черновике нет запчастей")
     if s["error"]:
         p.append("ошибка: " + s["error"])
     if s["rule_events"]:
@@ -157,9 +163,13 @@ def judge_answer(v: dict, history: list, q: str, answer: str) -> dict:
     """Судья получает те же данные машины, что и агент: паспорт, история проверок, заявки."""
     from tests.judge import judge
     full = json.loads(urllib.request.urlopen(BASE + "/api/vehicles/" + v["vehicle_id"]).read())
-    checks = [{k: s.get(k) for k in ("session_id", "checked_at", "status", "anomaly_type", "anomaly_title",
-                                      "anomaly_score", "confidence", "signal_quality", "description")}
-              for s in full["sessions"]]
+    ru = {"normal": "норма", "anomaly": "отклонение", "check_failed": "сбой проверки",
+          "good": "хорошее", "warning": "с помехами", "bad": "непригодна"}
+    checks = [{"проверка": s.get("session_id"), "дата": str(s.get("checked_at", ""))[:10],
+               "статус": ru.get(s.get("status"), s.get("status")), "код": s.get("anomaly_type"),
+               "неисправность": s.get("anomaly_title"), "оценка отклонения": s.get("anomaly_score"),
+               "точность распознавания": s.get("confidence"), "качество записи": ru.get(s.get("signal_quality"), s.get("signal_quality")),
+               "признаки": s.get("description")} for s in full["sessions"]]
     info = json.dumps({"госномер": v["vehicle_id"], "марка": v.get("make"), "модель": v.get("model"),
                        "гаражный номер": v.get("garage_no"), "двигатель": v["engine_model"],
                        "проверки": checks, "заявки": [t["toir_ticket_id"] for t in full.get("tickets", [])]},

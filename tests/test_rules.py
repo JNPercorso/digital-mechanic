@@ -138,3 +138,17 @@ def test_release_ban_only_with_manual_reference():
     assert removed == ["Выпускать на линию нельзя: нужна дефектовка."]  # запрет без ссылки убран, со ссылкой остался
     rec = rules.release_recommendation(ANOMALY)
     assert "до выпуска в рейс" in rec and "решение о выпуске принимает механик" in rec
+
+
+def test_trend_claim_checked_against_history():
+    sessions = [{"session_id": "S-1", "checked_at": "2026-10-31", "status": "normal", "anomaly_score": 0.12},
+                {"session_id": "S-2", "checked_at": "2026-11-15", "status": "anomaly", "anomaly_score": 0.85,
+                 "anomaly_title": "Низкое давление масла"}]
+    assert rules.trend_claim_wrong("Стало лучше: оценка снизилась", sessions)
+    assert not rules.trend_claim_wrong("Стало хуже: оценка выросла", sessions)
+    assert "стало хуже" in rules.trend_fact(sessions)[1]
+
+
+def test_hypotheses_heading_always_marked():
+    t = rules.mark_hypotheses("**Наблюдения**\nx\n**Гипотезы**\n- износ\n**Вероятные причины**\n- y")
+    assert t.count("**Гипотезы (не из руководства)**") == 2

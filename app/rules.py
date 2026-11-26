@@ -482,3 +482,43 @@ def release_recommendation(result: dict) -> str:
     urg, _ = urgency_reason(result)
     return (f"Рекомендация: {URGENCY_MEANING[urg]} (приоритет {PRIORITY_RU[urg]}). Прямого запрета эксплуатации "
             "в руководстве на этот двигатель не найдено, решение о выпуске принимает механик.")
+
+
+_BETTER = re.compile(r"(стало|состояние)\s+лучше|улучш", re.I)
+_WORSE = re.compile(r"(стало|состояние)\s+хуже|ухудш", re.I)
+
+
+def trend_fact(sessions: list[dict]) -> tuple[str, str] | None:
+    """Сравнение последней проверки с прошлой по оценке отклонения (считает код): (направление, фраза)."""
+    ok = [s for s in sessions if s.get("status") in ("normal", "anomaly") and s.get("anomaly_score") is not None]
+    if len(ok) < 2:
+        return None
+    a, b = ok[-2], ok[-1]
+    da, db = str(a.get("checked_at", ""))[:10].split("-"), str(b.get("checked_at", ""))[:10].split("-")
+    day = lambda d: f"{d[2]}.{d[1]}" if len(d) == 3 else ""  # noqa: E731
+    sa, sb = a["anomaly_score"], b["anomaly_score"]
+    word = "хуже" if sb > sa + 0.02 else "лучше" if sb < sa - 0.02 else "без изменений"
+    what = lambda s: (f"отклонение «{s.get('anomaly_title') or s.get('anomaly_type')}»"  # noqa: E731
+                      if s["status"] == "anomaly" else "норма")
+    return word, (f"По сравнению с прошлой проверкой стало {word}: {day(da)} - {what(a)}, оценка {n2(sa)}; "
+                  f"{day(db)} - {what(b)}, оценка {n2(sb)}." if word != "без изменений" else
+                  f"По сравнению с прошлой проверкой без заметных изменений: оценка {n2(sa)} и {n2(sb)}.")
+
+
+def trend_claim_wrong(text: str, sessions: list[dict]) -> bool:
+    """Ответ утверждает «стало лучше», а по данным хуже (или наоборот)."""
+    t = trend_fact(sessions)
+    if not t:
+        return False
+    better, worse = bool(_BETTER.search(text)), bool(_WORSE.search(text))
+    if better == worse:
+        return False
+    return (t[0] == "хуже" and better) or (t[0] == "лучше" and worse)
+
+
+_HYP_HEAD = re.compile(r"^\*\*(Гипотезы|Вероятные причины|Возможные причины|Гипотезы о причинах)[^*]*\*\*\s*$", re.I | re.M)
+
+
+def mark_hypotheses(text: str) -> str:
+    """Заголовок раздела гипотез всегда с пометкой, что это не из руководства (требование заказчика)."""
+    return _HYP_HEAD.sub("**Гипотезы (не из руководства)**", text)

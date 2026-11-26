@@ -112,7 +112,7 @@ button{font:inherit;cursor:pointer;color:inherit}
 .note{border-radius:16px;padding:10px 12px;font-size:13px;display:flex;gap:8px;align-items:flex-start}
 .n-warn{background:var(--n-warn-bg);color:var(--n-warn)}.n-bad{background:var(--n-bad-bg);color:var(--n-bad)}.n-ok{background:var(--n-ok-bg);color:var(--n-ok)}
 .cbar{--vbg:var(--bg);position:sticky;bottom:0;z-index:4;margin-top:auto;padding-top:16px;background:linear-gradient(to bottom,transparent,var(--vbg) 16px)}html[data-style=neon] .cbar{--vbg:#ffe1f0}html[data-style=neon][data-scheme=dark] .cbar{--vbg:#14062e}.cbar .composer{background:linear-gradient(var(--glass),var(--glass)),var(--vbg)}
-.pins{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}.pins:empty{display:none}
+.pins{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:6px}.pins::-webkit-scrollbar{display:none}.pin{flex:none;white-space:nowrap}.pins:empty{display:none}
 .pin{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--glass-b);background:linear-gradient(var(--glass),var(--glass)),var(--vbg);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .pin b{font-weight:600}
 .composer{display:flex;gap:8px;align-items:center;background:var(--glass);border:1px solid var(--glass-b);border-radius:999px;padding:6px 6px 6px 16px}
@@ -157,6 +157,7 @@ button{font:inherit;cursor:pointer;color:inherit}
 .pv .pvbody .page{margin-top:0;max-height:none;min-height:0;position:relative}
 .pv .ptab{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:13px}.pv .ptab td{border:1px solid var(--border-strong);padding:5px 7px;vertical-align:top}.pv .ptab tr.hl td{background:rgba(255,214,10,.18)}
 .pill .rep{margin-left:5px;font-weight:700;font-size:11px;padding:0 5px;border-radius:8px;background:rgba(0,0,0,.14)}html[data-scheme=dark] .pill .rep{background:rgba(255,255,255,.18)}
+.dhead{margin:-2px 0 8px;font-weight:600}.dhead i{margin-right:6px}
 .lowok{display:flex;gap:8px;align-items:flex-start;margin:8px 0 4px;font-size:13.5px;cursor:pointer}.lowok input{margin-top:3px;width:18px;height:18px;flex:none}
 .pv .pnav{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px}
 
@@ -309,7 +310,7 @@ html,body{overflow:hidden;overscroll-behavior:none;max-width:100%}.pane,.chat,#p
 .vc-hist .hist{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;min-width:0}.vc-hist .hist::-webkit-scrollbar{display:none}.vc-hist .hist span.h{flex:none}
 .vcard.min{padding:7px 12px;box-shadow:0 8px 18px -6px rgba(0,0,0,.18)}.vcard.min .vc-pic{flex-basis:58px}.vcard.min .vc-kpi,.vcard.min .vc-hl,.vcard.min .hist .hd{display:none}
 .vcard.min .vc-plate{font-size:16px}.vcard.min .vc-sub{font-size:11px}.vcard.min .vc-hist{margin-top:5px}.vcard.min .hist span.h{padding:0;background:none}.vcard.min .hist .pill{font-size:10px;padding:1px 7px}
-.modal{z-index:40}.pill.s-low{background:var(--chip);color:var(--text-2)}.page mark{background:#ffd28a;color:inherit;border-radius:3px;padding:0 2px}html[data-scheme=dark] .page mark{background:#7a4a10}@keyframes flash{0%{box-shadow:0 0 0 3px #f08c2e}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out}.msg.md{white-space:normal}.md p{margin:0 0 6px}.md h4{margin:10px 0 4px}.md h4:first-child{margin-top:0}.md ul,.md ol,.ticket ul.tl{margin:2px 0 6px;padding-left:20px}.md li,.ticket li{margin:2px 0}.note .md p:last-child{margin:0}
+.modal{z-index:40}.pill.s-low{background:var(--chip);color:var(--text-2)}.pill.s-fact{background:transparent;color:var(--text-2);box-shadow:inset 0 0 0 1px var(--border-strong)}.note.n-info{background:var(--chip);color:var(--text)}.note.n-info i{color:var(--text-2)}.page mark{background:#ffd28a;color:inherit;border-radius:3px;padding:0 2px}html[data-scheme=dark] .page mark{background:#7a4a10}@keyframes flash{0%{box-shadow:inset 0 0 0 3px #f08c2e}100%{box-shadow:inset 0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out}.msg.md{white-space:normal}.md p{margin:0 0 6px}.md h4{margin:10px 0 4px}.md h4:first-child{margin-top:0}.md ul,.md ol,.ticket ul.tl{margin:2px 0 6px;padding-left:20px}.md li,.ticket li{margin:2px 0}.note .md p:last-child{margin:0}
 </style>
 </head>
 <body class="d-web v-list">
@@ -436,9 +437,9 @@ function renderMain(){
  if(!sel){$('paneMain').innerHTML='<div class="empty">'+LOGO+'<div style="font-size:20px;font-weight:300;color:var(--text)">Цифровой механик</div><div>Выберите машину в списке слева</div></div>';renderTicketPane();return;}
  const v=sel;const rep=i=>{const c=v.hist[i][2];if(!c||v.hist[i][1]==='ok'||v.hist[i][1]==='fail')return 0;return v.hist.slice(i).filter(y=>y[2]===c&&y[1]!=='ok'&&y[1]!=='fail').length;};
  // Повторяющийся дефект: тот же код уже был раньше - метка «×N» (N-й раз по счёту)
- const h=v.hist.map((x,i)=>{const n=rep(i);return `<span class="h" data-h="${i}" role="button" tabindex="0" title="${n>1?'Повторяющийся дефект: '+x[2]+', '+n+'-й раз. ':''}Подробнее о проверке"><span class="pill ${ST[x[1]==='dev'?'dev':x[1]][0]}"><span class="pc">${x[2]||ST[x[1]][1]}</span><span class="pd">${x[0].slice(0,5)}</span>${n>1?`<b class="rep">×${n}</b>`:''}</span><span class="hd">${x[0]}</span></span>`;}).join('');
+ const h=v.hist.map((x,i)=>{const n=rep(i);return `<span class="h" data-h="${i}" role="button" tabindex="0" title="${n>1?'Повторяющийся дефект: '+x[2]+', '+n+'-й раз. ':''}Подробнее о проверке"><span class="pill ${ST[x[1]==='dev'?'dev':x[1]][0]}"><span class="pc">${x[2]||ST[x[1]][1]}</span><span class="pd">${x[0].slice(0,5)}</span>${n>1?`<b class="rep">повтор ${n}</b>`:''}</span><span class="hd">${x[0]}</span></span>`;}).join('');
  const tl=tickets[v.id]||[];const tk=tl.length?tl.length+' шт.':'';
- const tkCard=`<div class="card"><div class="chead"><span><svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>Заявки в ТОиР</span><span class="mut">${tl.length}</span></div>${tl.length?tl.slice().reverse().map(t=>`<div class="tkrow" onclick="openTicket('${v.id}','${t.no}')"><div><div style="font-weight:500">${t.no}</div><div class="mut">${t.date} ${t.time} · ${t.code} · ${t.prio}</div></div><span class="pill ${t.st==='Принята ТОиР'?'s-ok':'s-dev'}">${t.st}</span></div>`).join(''):'<div class="mut">Заявок по этой машине ещё не было</div>'}</div>`;
+ const tkCard=`<div class="card"><div class="chead"><span><svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>Заявки в ТОиР</span><span class="mut">${tl.length}</span></div>${tl.length?tl.slice().reverse().map(t=>`<div class="tkrow" onclick="openTicket('${v.id}','${t.no}')"><div><div style="font-weight:500">${t.no}</div><div class="mut">${t.date} ${t.time} · ${t.code} · ${t.prio}</div></div><span class="pill ${t.st==='Принята ТОиР'?'s-fact':'s-fail'}">${t.st}</span></div>`).join(''):'<div class="mut">Заявок по этой машине ещё не было</div>'}</div>`;
  const [lc,lt]=ST[v.sc];const last=v.hist[0];
  $('paneMain').innerHTML=`<div class="vwrap"><div class="card vcard" id="vcard"><div class="vc-top"><div class="vc-pic">${(window.truckSVG&&truckSVG(v))||TRUCK}</div>
  <div class="vc-info"><div class="vc-row1"><span class="vc-plate">${v.plate}</span><span class="pill ${lc}">${lt}</span></div><div class="vc-sub">${esc(v.model)} · ${v.engine}${v.garage?' · '+esc(v.garage):''}</div>
@@ -454,22 +455,22 @@ function renderMain(){
  fillDraft();$('bDiag').onclick=()=>runDiag(v);$('bMic').onclick=()=>micClick(v);$('bAsk').onclick=()=>runAsk(v);$('ask').onkeydown=e=>{if(e.key==='Enter')runAsk(v)};
  renderTicketPane();setTimeout(updPins,60);
 }
-function renderTicketPane(){const p=$('paneTicket');p.innerHTML='<div id="tkSlot"></div>';$('tkSlot').innerHTML=draft&&sel&&draft.vid===sel.id?ticketHTML(draft):'<div class="card"><div class="chead">Заявка на дефектовку</div><div class="mut">Черновик заявки появится после диагностики по последней проверке, если в руководстве есть подходящая процедура.</div></div>'+((tickets[sel?.id]||[]).map(t=>`<div class="note n-ok" style="margin-top:8px"><i class="ti ti-check"></i>${t.no} · ${t.time}</div>`).join(''));bindTicket();}
+function renderTicketPane(){const p=$('paneTicket');p.innerHTML='<div id="tkSlot"></div>';$('tkSlot').innerHTML=draft&&sel&&draft.vid===sel.id?ticketHTML(draft):'<div class="card"><div class="chead">Заявка на дефектовку</div><div class="mut">Черновик заявки появится после диагностики по последней проверке, если в руководстве есть подходящая процедура.</div></div>'+((tickets[sel?.id]||[]).map(t=>`<div class="note n-info" style="margin-top:8px"><i class="ti ti-check"></i>${t.no} · ${t.time}</div>`).join(''));bindTicket();}
 const TICON='<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>';
 const srcHTML=(r,q)=>`<span class="src" data-doc="${r.doc_id||''}" data-page="${r.page}" data-q="${q||''}" data-sq="${esc(r.sq||'')}"><i class="ti ti-file-text"></i>${esc(r.manual)}, стр. PDF ${r.page}</span>`;
 const listHTML=a=>a&&a.length?'<ul class="tl">'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<div>-</div>';
 const note=(k,t,ic)=>`<div class="note n-${k}"><i class="ti ti-${ic||(k==='bad'?'alert-triangle':k==='ok'?'check':'info-circle')}"></i><div>${esc(t)}</div></div>`;
-function ticketHTML(d){if(d.sent)return note('ok','Заявка '+d.no+' создана в ТОиР');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-low'}[d.prio];const lowN=d.low?note('warn',`Вывод предварительный: ${d.sq==='warning'?'запись с помехами, ':''}точность распознавания ${d.conf!=null?String(d.conf.toFixed(2)).replace('.',','):'низкая'} (порог предварительного вывода 0,60; ниже 0,50 заявка не формируется). Первая работа - повторная проверка, убрать её нельзя.`,'alert-triangle')+`<label class="lowok"><input type="checkbox" data-lowok ${d.lowOk?'checked':''}> Я видел предупреждение и подтверждаю заявку по предварительному выводу</label>`:'';const ed=d.low?d.works.slice(1):d.works;
+function ticketHTML(d){if(d.sent)return note('info','Заявка '+d.no+' создана в ТОиР','send');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-low'}[d.prio];const lowN=d.low?note('warn',`Вывод предварительный: ${d.sq==='warning'?'запись с помехами, ':''}точность распознавания ${d.conf!=null?String(d.conf.toFixed(2)).replace('.',','):'низкая'} (порог предварительного вывода 0,60; ниже 0,50 заявка не формируется). Первая работа - повторная проверка, убрать её нельзя.`,'alert-triangle')+`<label class="lowok"><input type="checkbox" data-lowok ${d.lowOk?'checked':''}> Я видел предупреждение и подтверждаю заявку по предварительному выводу</label>`:'';const ed=d.low?d.works.slice(1):d.works;
  const head=t=>`<div class="chead"><span>${TICON}${t}</span></div>`;
  const fault=`<div class="lbl">Неисправность</div><div>${d.code} · ${esc(FAULTS[d.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(d.conclusion)}</div>`;
  const srcs=`<div class="lbl">Источники${d.editing?' (меняются только через агента)':''}</div><div>${d.srcs.map(r=>srcHTML(r,esc(r.quote||d.works.join('. ')))).join('')}</div>`;
  if(d.editing)return `<div class="ticket card">${head('Изменение черновика')}${fault}<div class="lbl">Приоритет</div><select id="ePrio">${['Высокий','Средний','Низкий'].map(x=>`<option ${x===d.prio?'selected':''}>${x}</option>`).join('')}</select><div class="lbl">Работы (по одной в строке)</div>${d.low?`<div class="mut" style="margin:4px 0"><i class="ti ti-lock"></i> ${esc(d.works[0])}</div>`:''}<textarea id="eWorks" rows="5">${esc(ed.join('\n'))}</textarea><div class="lbl">Запчасти (по одной в строке)</div><textarea id="eParts" rows="3">${esc(d.parts.join('\n'))}</textarea>${srcs}<div class="row"><button class="btnp" data-tk="save">Сохранить</button><button class="btn" data-tk="noedit">Не сохранять</button></div></div>`;
  const cfN=(d.conflicts||[]).map(c=>note('warn',`Противоречие в документации (${c.pages.join('; ')}): ${c.topic.toLowerCase()}. ${c.decision} Уточните у специалиста или производителя.`,'git-compare')).join('');
- return `<div class="ticket card">${head('Черновик заявки')}${lowN}${cfN}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send" ${d.low&&!d.lowOk?'disabled title="Сначала подтвердите предупреждение"':''}><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
+ return `<div class="ticket card">${head('Черновик заявки')}${lowN}${cfN}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill s-fact">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send" ${d.low&&!d.lowOk?'disabled title="Сначала подтвердите предупреждение"':''}><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
 function fillDraft(){const all=document.querySelectorAll('#chat .chat-ticket');all.forEach((el,i)=>{el.innerHTML=(i===all.length-1&&draft&&sel&&draft.vid===sel.id)?ticketHTML(draft):'';});bindTicket();}
 function refreshDraft(){renderMain();}
 function openTicket(vid,no){const t=(tickets[vid]||[]).find(x=>x.no===no);if(!t)return;const v=V.find(x=>x.id===vid);const m=document.createElement('div');m.className='modal';
- m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-ok">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(r=>srcHTML(r,esc(r.quote||t.works.join('. ')))).join('')}</div></div>`;
+ m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-fact">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill s-fact">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(r=>srcHTML(r,esc(r.quote||t.works.join('. ')))).join('')}</div></div>`;
  m.onclick=e=>{if(e.target===m||e.target.closest('.rbtn'))m.remove();};$('frame').appendChild(m);logEv('ui','просмотр заявки '+t.no);}
 // Окно страницы руководства: картинка страницы PDF целиком (рисунки, таблицы) с подсвеченными строками фрагмента,
 // на который сослался агент, и текст страницы абзацами. Широкий экран: рядом; узкий: вкладки «Страница» / «Текст».
@@ -479,7 +480,7 @@ function pageHTML(paras){const sx=a=>a.map(x=>x.h?`<mark>${esc(x.t)}</mark>`:esc
  const flush=()=>{if(rows.length){h+=`<table class="ptab">${rows.join('')}</table>`;rows=[];}};
  for(const p of paras){if(Array.isArray(p)){flush();h+=`<p>${sx(p)}</p>`;}else rows.push(`<tr${p.row.some(c=>c.some(x=>x.h))?' class="hl"':''}>${p.row.map(c=>`<td>${sx(c)}</td>`).join('')}</tr>`);}
  flush();return h;}
-function openPage(doc,page,q,sq){const m=document.createElement('div');m.className='modal pv';let cur=page,tab='img';
+function openPage(doc,page,q,sq){const m=document.createElement('div');m.className='modal pv';let cur=page,tab='txt';
  const qs=()=>cur===page&&(q||sq)?'?q='+encodeURIComponent(q||'')+'&sq='+encodeURIComponent(sq||''):'';
  const render=async()=>{let pg;try{const r=await fetch(`api/manuals/${doc}/${cur}`+qs());if(!r.ok)throw 0;pg=await r.json();}catch(e){m.innerHTML=`<div class="card"><div class="chead"><span>Руководство</span><button class="rbtn" data-x>×</button></div>${note('bad','Не удалось загрузить страницу')}</div>`;return;}
   const body=pageHTML(pg.paras);
@@ -520,13 +521,14 @@ const plain=t=>t.replace(/\[\[[^\]]+\]\]/g,'').replace(/\*\*/g,'').replace(/^#+\
 document.addEventListener('scroll',e=>{const el=e.target;if(!el||!el.classList)return;el.classList.add('scrolling');clearTimeout(el._st);el._st=setTimeout(()=>el.classList.remove('scrolling'),900);},true);
 function bindTicket(){spkIcons&&spkIcons();document.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>ticketAct(b.dataset.tk,b));}
 
-function addChat(html,vid){vid=vid||sel.id;chatLog[vid]=(chatLog[vid]||'')+html;if(sel&&sel.id===vid){const c=$('chat');if(c){c.innerHTML=chatLog[vid];c.scrollTop=1e9;$('paneMain').scrollTop=1e9;}fillDraft();setTimeout(updPins,60);}}
+let btmTok=0;function toBottom(){const tok=++btmTok;let n=0;const f=()=>{const pm=$('paneMain');if(tok!==btmTok||!pm)return;pm.scrollTop=pm.scrollHeight;if(++n<24)requestAnimationFrame(f);};f();}
+function addChat(html,vid){vid=vid||sel.id;chatLog[vid]=(chatLog[vid]||'')+html;if(sel&&sel.id===vid){const c=$('chat');if(c){c.innerHTML=chatLog[vid];c.scrollTop=1e9;toBottom();}fillDraft();setTimeout(updPins,60);}}
 function logEv(t,s){const d=document.createElement('div');d.innerHTML=`<span class="ev">${new Date().toLocaleTimeString('ru-RU')} ${t}</span> ${s}`;$('log').prepend(d);}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 
 let t0=0,timer=null,cur={tin:0,tout:0,steps:[]};
 function startReq(kind){stopSay();busy=true;S.req++;cur={tin:0,tout:0,steps:[]};t0=performance.now();$('reqState').textContent=kind;$('stepsTable').innerHTML='';timer=setInterval(()=>$('mTime').textContent=fmt((performance.now()-t0)/1000,1)+' с',100);renderChecks([]);renderMain();}
-function endReq(){busy=false;clearInterval(timer);$('mTime').textContent=fmt((performance.now()-t0)/1000,1)+' с';$('reqState').textContent='готово';setStream('free');renderMain();updSession();logEv('done','запрос завершён');}
+function endReq(){busy=false;clearInterval(timer);$('mTime').textContent=fmt((performance.now()-t0)/1000,1)+' с';$('reqState').textContent='готово';setStream('free');renderMain();toBottom();updSession();logEv('done','запрос завершён');}
 function cost(tin,tout){const p=price();return tin/1e6*p.i+tout/1e6*p.o;}
 function addStep(name,kind,tin,tout,ms){cur.steps.push({name,kind,tin,tout,ms});cur.tin+=tin;cur.tout+=tout;if(kind==='LLM'){S.llm++;S.tin+=tin;S.tout+=tout;}else S.tools++;
  $('stepsTable').innerHTML='<tr><td style="color:var(--panel-muted)">шаг</td><td style="color:var(--panel-muted)">вход</td><td style="color:var(--panel-muted)">выход</td><td style="color:var(--panel-muted)">мс</td></tr>'+cur.steps.map(s=>`<tr><td>${s.kind==='LLM'?'<i class="ti ti-brain"></i>':'<i class="ti ti-tool"></i>'} ${s.name}</td><td>${s.tin||'-'}</td><td>${s.tout||'-'}</td><td>${s.ms}</td></tr>`).join('');
@@ -558,7 +560,7 @@ function renderEv(e,v,ctx,live){switch(e.type){
  case 'warning':ctx.done();addChat(note('warn',e.text,'alert-triangle'),v.id);if(live)logEv('warning',esc(e.text));break;
  case 'answer':{ctx.done();ctx.got=true;if(ctx.diag&&ctx.result){const last=v.sessions[v.sessions.length-1];if(ctx.result.session_id===last.session_id)diagDone[v.id]=true;}const id='m'+rnd();SAY[id]=plain(e.text);const dg=ctx.diag?' data-diag="1"':'';
   if(ctx.result&&ctx.result.status==='check_failed'&&ctx.diag)addChat(`<div class="note n-bad"${dg} style="position:relative;padding-right:46px"><i class="ti ti-microphone-off"></i><div class="md">${md(e.text,[])}</div><button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить">${VOL}</button></div><button class="btn" data-retry><i class="ti ti-refresh"></i> Повторить проверку</button>`,v.id);
-  else addChat(`<div class="msg md" id="${id}"${dg}>${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
+  else addChat(`<div class="msg md" id="${id}"${dg}>${ctx.diag?`<div class="chead dhead"><span><i class="ti ti-stethoscope"></i>Результат диагностики${ctx.result&&ctx.result.session_id?' · '+esc(ctx.result.session_id):''}</span></div>`:''}${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
   if(e.searched){ctx.chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);ctx.chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
   if(ctx.pendingTk){addChat('<div class="chat-ticket"></div>',v.id);ctx.pendingTk=false;}
   ctx.diag=false;if(live)logEv('answer','ответ агента');break;}
@@ -567,7 +569,7 @@ function renderEv(e,v,ctx,live){switch(e.type){
  case 'no_ticket':ctx.done();addChat(note('warn',e.text,'file-off'),v.id);if(live)logEv('rule','заявка не сформирована: нет инструкции');break;
  case 'diag_start':ctx.done();ctx.diag=true;addChat(`<div class="step"><i class="ti ti-check"></i><span>Сначала диагностика по последней проверке</span></div>`,v.id);break;
  case 'show':ctx.show=e.what;break;
- case 'ticket_sent':addChat(note('ok',`Заявка ${e.ticket_id} создана в ТОиР`),v.id);break;
+ case 'ticket_sent':addChat(note('info',`Заявка ${e.ticket_id} создана в ТОиР`,'send'),v.id);break;
  case 'error':ctx.done();ctx.err=true;addChat(note('bad',e.text),v.id);if(live)logEv('error',esc(e.text));break;}}
 function newCtx(v,live){const ctx={stepId:null,result:null,pendingTk:false,diag:false,chk:[]};
  ctx.done=()=>{if(live&&ctx.stepId){chatLog[v.id]=chatLog[v.id].replace(`<i class="ti ti-loader-2 spin"></i><span data-s="${ctx.stepId}">`,`<i class="ti ti-check"></i><span data-s="${ctx.stepId}">`);ctx.stepId=null;addChat('',v.id);}};return ctx;}
@@ -591,7 +593,7 @@ document.addEventListener('change',e=>{if(!e.target.matches('[data-lowok]')||!dr
 document.addEventListener('click',e=>{const b=e.target.closest('[data-again]');if(!b||busy||!lastReq||!sel)return;b.remove();runAgent(...lastReq);});
 document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))return;addChat(note('warn','Повторите запись на посту (прогретый двигатель, холостой ход), затем снова нажмите «Получить результат диагностики».','refresh'));logEv('ui','повторная проверка запрошена');});
 // Результат по последней проверке уже получен - повторно не запрашиваем, а показываем его в чате
-function showEl(el){if(!el)return;const pm=$('paneMain'),vc=$('vcard');const off=el.getBoundingClientRect().top-(vc?Math.max(vc.getBoundingClientRect().bottom,pm.getBoundingClientRect().top+(vc.classList.contains('min')?0:90)):pm.getBoundingClientRect().top)-8;pm.scrollBy({top:off,behavior:'smooth'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+function showEl(el){if(!el)return;btmTok++;const pm=$('paneMain'),vc=$('vcard');const off=el.getBoundingClientRect().top-(vc?Math.max(vc.getBoundingClientRect().bottom,pm.getBoundingClientRect().top+(vc.classList.contains('min')?0:90)):pm.getBoundingClientRect().top)-8;pm.scrollBy({top:off,behavior:'smooth'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
 const lastDiagEl=()=>{const a=document.querySelectorAll('#chat [data-diag]');return a[a.length-1]||null;};
 const lastTkEl=()=>{const a=[...document.querySelectorAll('#chat .chat-ticket')].filter(x=>x.innerHTML.trim());return a[a.length-1]||null;};
 // Плашки над строкой ввода: черновик заявки и результат диагностики, когда они ушли из вида
@@ -599,8 +601,8 @@ function updPins(){const box=$('pins'),pane=$('paneMain');if(!box||!pane||!sel)r
  const top=vc?vc.getBoundingClientRect().bottom:pr.top,bot=cb?cb.getBoundingClientRect().top:pr.bottom;
  const hidden=el=>{if(!el)return false;const r=el.getBoundingClientRect();return r.bottom<top+20||r.top>bot-20;};
  const tk=lastTkEl(),dg=lastDiagEl();let h='';
- if(hidden(dg))h+=`<button class="pin" data-pin="diag"><i class="ti ti-stethoscope"></i>Результат диагностики</button>`;
- if(hidden(tk)&&draft)h+=`<button class="pin" data-pin="tk"><i class="ti ti-clipboard-list"></i>Черновик заявки · <b>${draft.prio}</b></button>`;
+ if(hidden(dg))h+=`<button class="pin" data-pin="diag"><i class="ti ti-stethoscope"></i>Результат</button>`;
+ if(hidden(tk)&&draft)h+=`<button class="pin" data-pin="tk"><i class="ti ti-clipboard-list"></i>Заявка · <b>${draft.prio}</b></button>`;
  if(box.innerHTML!==h)box.innerHTML=h;}
 document.addEventListener('click',e=>{const p=e.target.closest('[data-pin]');if(!p)return;showEl(p.dataset.pin==='tk'?lastTkEl():lastDiagEl());logEv('ui',p.dataset.pin==='tk'?'плашка: черновик заявки':'плашка: результат диагностики');});
 function runDiag(v){if(diagDone[v.id]){showEl(lastDiagEl());return;}
@@ -616,7 +618,7 @@ async function ticketAct(a,btn){const box=btn?btn.closest('.ticket'):document;co
  if(a==='send'){if(btn)btn.disabled=true;const vid=draft.vid;logEv('toir','POST /tickets');
   const r=await fetch('api/tickets/'+draft.dbid+'/send',{method:'POST',headers:HDR({'Content-Type':'application/json'}),body:JSON.stringify({confirmed_low_confidence:!!draft.lowOk})});
   if(!r.ok){let t='ТОиР не принял заявку';try{t=(await r.json()).detail||t;}catch(x){}draft.err=t;logEv('toir','ошибка: '+esc(t));refreshDraft();return;}
-  const t=await r.json();S.tk++;S.tools++;draft=null;await loadTickets(vid);addChat(note('ok',`Заявка ${t.toir_ticket_id} создана в ТОиР`),vid);chatPut(V.find(x=>x.id===vid),{type:'ticket_sent',ticket_id:t.toir_ticket_id});
+  const t=await r.json();S.tk++;S.tools++;draft=null;await loadTickets(vid);addChat(note('info',`Заявка ${t.toir_ticket_id} создана в ТОиР`,'send'),vid);chatPut(V.find(x=>x.id===vid),{type:'ticket_sent',ticket_id:t.toir_ticket_id});
   renderChecks([['confirm',true,'отправлено по кнопке механика']]);logEv('toir','создана '+t.toir_ticket_id);updSession();renderMain();}}
 
 document.querySelectorAll('.devsw button').forEach(b=>b.onclick=()=>{if(dev!==b.dataset.dev)logEv('ui','устройство: '+b.textContent.trim());setDev(b.dataset.dev);});
@@ -754,7 +756,8 @@ async function boot(){try{const [vs,ft]=await Promise.all([fetch('api/vehicles')
   FAULTS=ft;V=vs.map(mapVeh);V.forEach(v=>{TR[v.id]=v.sessions.map(s=>[dtFmt(s.checked_at).slice(0,5),s.status==='check_failed'?null:s.anomaly_score]);ENG[v.engine]=1;});}
  catch(e){$('vehList').innerHTML='<div class="empty">Не удалось загрузить список машин. Обновите страницу.</div>';return;}
  renderChips();renderList();renderMain();}
-$('paneMain').addEventListener('scroll',()=>{const c=$('vcard');if(!c)return;const t=$('paneMain').scrollTop;if(t>60)c.classList.add('min');else if(t<8)c.classList.remove('min');updPins();},{passive:true});
+let cardT=0;$('paneMain').addEventListener('scroll',()=>{const c=$('vcard'),pm=$('paneMain');if(!c)return;const t=pm.scrollTop,now=performance.now();
+ if(now-cardT>350){const want=c.classList.contains('min')?t>4:t>90;if(want!==c.classList.contains('min')){const h0=c.offsetHeight;c.classList.toggle('min',want);cardT=now;if(want){const d=h0-c.offsetHeight;if(d>0&&pm.scrollHeight-pm.clientHeight>t+d)pm.scrollTop=t+d;}}}updPins();},{passive:true});
 document.querySelector('.logo-slot').innerHTML=LOGO;renderChecks([]);updSession();setDev(autoDev());$('pClose').onclick=togglePanel;$('sheetBg').onclick=togglePanel;boot();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>

@@ -53,6 +53,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 **Источник** - список страниц руководства, на которые опирается ответ, ссылками [[doc_id:страница]].
 **Ограничения** - чего в руководстве нет или что требует проверки на месте.
 Запрет эксплуатации или выпуска в рейс пиши только если на найденной странице руководства прямо сказано, что эксплуатация запрещена, и ставь ссылку на неё; иначе это рекомендация.
+Для запчастей поищи в руководстве обозначения деталей этого узла (например «<узел> обозначение» или «<деталь> каталожный номер»); в черновик бери только то, что есть на найденных страницах.
 Сначала найди процедуру проверки, регулировки или ремонта именно этого узла, затем вызови draft_ticket и после этого дай ответ механику. В draft_ticket к каждой странице приложи дословную цитату с неё (одно-два предложения), работы бери только с этих страниц. Оглавление и общие разделы, где узел не упомянут, не годятся. Если подходящей процедуры нет - draft_ticket не вызывай и скажи, что в руководстве на этот двигатель нет инструкции по этой неисправности. Номер черновика не упоминай: механик видит черновик рядом с ответом.
 
 На вопрос механика отвечай по той же логике, но только нужными пунктами; источник обязателен."""
@@ -82,7 +83,7 @@ FUNCTIONS = [
          "operations": {"type": "array", "items": {"type": "string"},
                         "description": "Работы по дефектовке/ремонту по руководству"},
          "spare_parts": {"type": "array", "items": {"type": "string"},
-                         "description": "Запчасти с каталожными номерами из руководства; пусто, если не нашёл"},
+                         "description": "Запчасти: наименование и обозначение (каталожный номер) так, как они написаны на найденных страницах руководства, например «Прокладка крышки головки цилиндров 236-1003270-В». Пусто, если на страницах их нет"},
          "references": {"type": "array", "items": {"type": "object", "properties": {
              "doc_id": {"type": "string"}, "page": {"type": "integer"},
              "quote": {"type": "string", "description": "Дословная цитата с этой страницы: процедура или норматив по узлу"}},
@@ -139,6 +140,7 @@ class Run:
         self.result: dict | None = None   # последний полученный результат проверки
         self.node = ""                    # тип неисправности, по которому отвечаем (кнопка диагностики)
         self.draft_nudged = False
+        self.pre_draft_answer = ""
         self.data_numbers: set[str] = set()  # числа из данных машины (не нормативы)
         self._remember_numbers({k: self.v.get(k) for k in ("vehicle_id", "garage_no", "model", "make", "engine_model")})
         self.conflicts: dict[str, dict] = {}  # противоречия в документации, найденные в этом запросе
@@ -329,6 +331,19 @@ class Run:
         if resolved:
             store.log_event("resolved_disputed_ops", {"ops": resolved}, request_id=self.id,
                             vehicle_id=self.v["vehicle_id"])
+        # Запчасти: обозначение и название должны быть на страницах, найденных поиском в этом запросе
+        seen_text = chr(10).join(rag.page_text(d, p) or "" for d, p in self.seen_pages)
+        parts, bad_parts = [], []
+        known = {d.upper() for d in rag.PART_NO.findall(seen_text)}
+        for x in (str(x).strip() for x in (args.get("spare_parts") or [])):
+            if not x:
+                continue
+            nos = rag.PART_NO.findall(x)
+            # обозначение детали должно совпасть целиком (одна лишняя или пропущенная цифра - другая деталь)
+            ok = all(n.upper() in known for n in nos) if nos else rules.op_supported(x, seen_text)
+            (parts if ok else bad_parts).append(x)
+        if bad_parts:
+            store.log_event("rejected_parts", {"parts": bad_parts}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
         low = rules.is_low_confidence(r)
         if low:
             ops = [rules.recheck_operation(r)] + ops
@@ -337,11 +352,11 @@ class Run:
                    "anomaly_type": r["anomaly_type"],
                    "conclusion": ("Предварительно: " if low else "") + str(args.get("conclusion", "")).strip(),
                    "urgency": urgency, "operations": ops,
-                   "spare_parts": [s for s in (args.get("spare_parts") or []) if str(s).strip()],
+                   "spare_parts": parts,
                    "references": [{"manual": x["manual"], "pdf_page": x["page"]} for x in refs]}
         extra = {"why": why, "refs": refs, "anomaly_title": r.get("anomaly_title"), "low_confidence": low,
                  "confidence": r.get("confidence"), "signal_quality": r.get("signal_quality"),
-                 "removed_operations": bad_ops,
+                 "removed_operations": bad_ops, "removed_parts": bad_parts,
                  "conflicts": [{"topic": c["topic"], "decision": c["decision"],
                                 "pages": [f"{rag_title(d)}, стр. {p}" for d, p, _ in c["sources"]]}
                                for c in self.conflicts.values()]}
@@ -389,6 +404,7 @@ class Run:
                     and self.result and not rules.is_no_ticket(self.result)):
                 # По отклонению сначала черновик заявки (или явный отказ, если процедуры нет), потом ответ
                 self.draft_nudged = True
+                self.pre_draft_answer = msg.get("content") or ""  # полный разбор до черновика - не теряем
                 store.log_event("rule_draft_required", {}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
                 messages.append({"role": "assistant", "content": msg.get("content") or ""})
                 messages.append({"role": "user", "content": "Ответ пока не показан механику: сначала вызови draft_ticket - работы только со страниц с процедурой этого узла, к каждой странице дословная цитата. Если подходящей процедуры в найденном нет - поищи ещё; если её нет в руководстве, повтори ответ и скажи об этом."})
@@ -404,7 +420,10 @@ class Run:
                 messages.append({"role": "user", "content": "Ответ не принят: ты не искал в руководстве. Если в ответе есть технические сведения, нормативы или рекомендации - вызови search_manual и ответь только по найденному, со ссылками. Если вопрос только об истории проверок этой машины - ответь без нормативов и рекомендаций по ремонту. Если вопрос не о технике - ответь одной фразой, что с этим не помогаешь." + (" По результату с отклонением найди процедуру узла, вызови draft_ticket с дословными цитатами, затем ответь." if self.result and self.result.get("status") == "anomaly" and not rules.is_no_ticket(self.result) else "")})
                 continue
             if not fc:
-                content, disputed = rules.disputed_lines(msg.get("content") or "", list(self.conflicts.values()))
+                raw = msg.get("content") or ""
+                if self.pre_draft_answer and "наблюдени" not in raw.lower() and "наблюдени" in self.pre_draft_answer.lower():
+                    raw = self.pre_draft_answer  # после черновика модель ответила коротко - показываем полный разбор
+                content, disputed = rules.disputed_lines(raw, list(self.conflicts.values()))
                 if disputed:
                     store.log_event("removed_disputed", {"lines": disputed}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
@@ -433,12 +452,20 @@ class Run:
                     store.log_event("blocked_leak", {"text": text[:2000]}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
                     text, refs = ABOUT, []
-                text = rules.drop_empty_sections(text)
+                text = rules.mark_hypotheses(rules.drop_empty_sections(text))
+                if rules.trend_claim_wrong(text, self.v["sessions"]):  # «стало лучше/хуже» сверяем с данными
+                    store.log_event("fixed_trend", {"text": text[:1000]}, request_id=self.id,
+                                    vehicle_id=self.v["vehicle_id"])
+                    text = rules.trend_fact(self.v["sessions"])[1]
                 if self.recur:  # повтор дефекта - факт из истории, добавляет код в начало наблюдений
                     m = re.search(r"^\*\*Наблюдения\*\*\s*$", text, re.M)
                     line = f"- **{self.recur}**"
                     text = (text[:m.end()] + chr(10) + line + text[m.end():]) if m else f"{line}{chr(10)}{chr(10)}{text}"
                 text = text.strip()
+                if not text:  # всё убрано проверками: пустой ответ механику не показываем
+                    store.log_event("empty_answer", {}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
+                    text = ("Черновик заявки подготовлен, проверьте его ниже." if self.drafted else
+                            "Не удалось подтвердить ответ страницами руководства. Уточните вопрос или повторите запрос.")
                 yield self.ev("answer", text=text, refs=refs, rejected=len(rejected),
                               searched=bool(self.seen_pages), engine=self.engine)
                 return
@@ -512,6 +539,15 @@ async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
         found, evs = await run.tool("search_manual", {"query": q, "node_first": True})
         for e in evs:
             yield e
+        # Кандидаты в запчасти узла: строки руководства с обозначениями деталей (поиск по словам их не находит)
+        cand = rag.parts_for(run.engine, rules.FAULTS.get(run.node, (None, []))[1])
+        for c in cand:
+            run.seen_pages.add((c["doc_id"], c["page"]))
+            run.page_queries.setdefault((c["doc_id"], c["page"]), c["designation"])
+        if cand:
+            user += ("\nДетали этого узла с обозначениями из руководства (кандидаты для spare_parts, бери только те, "
+                     "что нужны для работ, наименование и обозначение - как в строке): "
+                     + json.dumps(cand, ensure_ascii=False))
         user += (f"\nКод уже выполнил search_manual по запросу «{q}»: "
                  + json.dumps(found, ensure_ascii=False)
                  + "\nЕсли процедуры узла здесь нет, поищи ещё конкретными словами.")
