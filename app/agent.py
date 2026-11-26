@@ -27,6 +27,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 6. Не используй английские термины (confidence, score, anomaly): говори «точность распознавания», «оценка отклонения»; дробные числа пиши через запятую.
 7. Результат проверки, который уже есть в сообщении, повторно не запрашивай.
 8. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
+9. Если найденные инструкции противоречат друг другу, не выбирай одну как бесспорную: покажи обе формулировки со ссылками, отметь противоречие и рекомендуй уточнить у специалиста или производителя для этой модификации двигателя.
 
 Ответ на результат проверки с отклонением - в таком порядке, с заголовками:
 **Наблюдения** - что показала проверка: признаки, оценка отклонения, точность распознавания.
@@ -70,6 +71,11 @@ FUNCTIONS = [
 ]
 
 
+def rag_title(doc_id: str) -> str:
+    from app.manuals import BY_ID
+    return BY_ID[doc_id].title
+
+
 def _vehicle_line(v: dict) -> str:
     return f"{v.get('make')} {v.get('model') or ''} госномер {v['vehicle_id']}, гаражный {v.get('garage_no')}".replace("  ", " ")
 
@@ -94,6 +100,7 @@ class Run:
         self.result: dict | None = None   # последний полученный результат проверки
         self.node = ""                    # тип неисправности, по которому отвечаем (кнопка диагностики)
         self.draft_nudged = False
+        self.conflicts: dict[str, dict] = {}  # противоречия в документации, найденные в этом запросе
         self.recur = ""                   # повтор того же дефекта в истории машины (строка для наблюдений)
         self.drafted = False              # черновик заявки создан в этом запросе
         self.draft_problem = ""           # почему черновик не принят (для ответа механику)
@@ -184,8 +191,24 @@ class Run:
                 self.page_queries.setdefault((h["doc_id"], h["page"]), q)
             if not hits:
                 return {"found": [], "note": "В руководствах этого двигателя ничего не найдено"}, evs
-            return {"found": [{"doc_id": h["doc_id"], "manual": h["manual"], "page": h["page"],
-                               "text": h["text"]} for h in hits]}, evs
+            out = {"found": [{"doc_id": h["doc_id"], "manual": h["manual"], "page": h["page"],
+                              "text": h["text"]} for h in hits]}
+            # Известное противоречие в документации: подтягиваем все его страницы, даже если поиск нашёл одну
+            confl = rules.conflicts_for_pages({(h["doc_id"], h["page"]) for h in hits})
+            for c in confl:
+                self.conflicts[c["id"]] = c
+                for d, p, _ in c["sources"]:
+                    self.seen_pages.add((d, p))
+                    self.page_queries.setdefault((d, p), q)
+            if confl:
+                out["conflicts"] = [{"topic": c["topic"], "sources": [{"doc_id": d, "page": p, "quote": qt}
+                                                                      for d, p, qt in c["sources"]],
+                                     "decision": c["decision"]} for c in confl]
+                out["conflicts_rule"] = ("Инструкции противоречат друг другу. Блок с обеими формулировками и ссылками "
+                                         "код добавит в конец ответа сам: свой раздел о противоречии не пиши. "
+                                         "Не называй ни одну формулировку бесспорной; в проверках и в заявке укажи "
+                                         "консервативный вариант из decision и не упоминай спорное условие вне раздела «Ограничения».")
+            return out, evs
         if name == "draft_ticket":
             return await self._draft(args, evs)
         return {"error": f"нет инструмента {name}"}, evs
@@ -230,6 +253,10 @@ class Run:
             return {"error": f"Черновик не принят: {self.draft_problem}. {reasons}"
                     + (f". Работы без опоры на страницы: {bad_ops}" if bad_ops else "")
                     + ". Найди процедуру этого узла и приложи дословные цитаты, либо скажи, что инструкции нет."}, evs
+        ops, resolved = rules.resolve_disputed_ops(ops, list(self.conflicts.values()))
+        if resolved:
+            store.log_event("resolved_disputed_ops", {"ops": resolved}, request_id=self.id,
+                            vehicle_id=self.v["vehicle_id"])
         low = rules.is_low_confidence(r)
         if low:
             ops = [rules.recheck_operation(r)] + ops
@@ -242,7 +269,10 @@ class Run:
                    "references": [{"manual": x["manual"], "pdf_page": x["page"]} for x in refs]}
         extra = {"why": why, "refs": refs, "anomaly_title": r.get("anomaly_title"), "low_confidence": low,
                  "confidence": r.get("confidence"), "signal_quality": r.get("signal_quality"),
-                 "removed_operations": bad_ops}
+                 "removed_operations": bad_ops,
+                 "conflicts": [{"topic": c["topic"], "decision": c["decision"],
+                                "pages": [f"{rag_title(d)}, стр. {p}" for d, p, _ in c["sources"]]}
+                               for c in self.conflicts.values()]}
         tid = store.save_draft(self.v["vehicle_id"], r["session_id"], payload, extra)
         self.drafted = True
         evs.append(self.ev("step", text="Готовлю черновик заявки на дефектовку", tool="draft_ticket"))
@@ -298,7 +328,13 @@ class Run:
                 messages.append({"role": "user", "content": "Ответ не принят: ты не искал в руководстве. Если в ответе есть технические сведения, нормативы или рекомендации - вызови search_manual и ответь только по найденному, со ссылками. Если вопрос только об истории проверок этой машины - ответь без нормативов и рекомендаций по ремонту." + (" По результату с отклонением найди процедуру узла, вызови draft_ticket с дословными цитатами, затем ответь." if self.result and self.result.get("status") == "anomaly" and not rules.is_no_ticket(self.result) else "")})
                 continue
             if not fc:
-                text, refs, rejected = rules.filter_citations(msg.get("content") or "", self.engine, self.seen_pages)
+                content, disputed = rules.disputed_lines(msg.get("content") or "", list(self.conflicts.values()))
+                if disputed:
+                    store.log_event("removed_disputed", {"lines": disputed}, request_id=self.id,
+                                    vehicle_id=self.v["vehicle_id"])
+                for c in self.conflicts.values():  # обе формулировки со ссылками - всегда, в одном виде
+                    content += chr(10) + chr(10) + rules.conflict_block(c)
+                text, refs, rejected = rules.filter_citations(content, self.engine, self.seen_pages)
                 self._tag(refs)
                 text, removed = rules.unsupported_lines(text, self.ml_numbers())
                 text, unverified = rules.unverified_cited_lines(text, rag.page_text, self.node)

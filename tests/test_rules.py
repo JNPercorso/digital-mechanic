@@ -98,3 +98,33 @@ def test_operations_must_come_from_pages():
     assert rules.op_supported("Отрегулировать тепловые зазоры впускных клапанов 0,30-0,40 мм", pages)
     assert not rules.op_supported("Отрегулировать зазоры 0,25 мм", pages)
     assert not rules.op_supported("Заменить турбокомпрессор в сборе", pages)
+
+
+# ---------- противоречия в документации ----------
+def test_conflict_block_shows_all_sources():
+    seen = {("yamz236_re", 31)}
+    found = rules.conflicts_for_pages(seen)
+    assert [c["id"] for c in found] == ["yamz236_valve_clearance"]
+    block = rules.conflict_block(found[0])
+    for d, p, _ in found[0]["sources"]:
+        assert f"[[{d}:{p}]]" in block
+    assert "холодном двигателе" in block and "уточните у специалиста" in block
+    seen_all = {(d, p) for d, p, _ in found[0]["sources"]}
+    text, refs, rejected = rules.filter_citations(block, "ЯМЗ-236М2", seen_all)
+    assert len(refs) == 3 and not rejected
+    out, removed = rules.unsupported_lines(text)
+    assert not removed  # «15 минут» в блоке противоречия - цитата, не норматив без ссылки
+
+
+def test_disputed_condition_not_presented_as_fact():
+    t = ("**Проверки**\n- Регулировать не ранее чем через 15 минут после остановки [[yamz236_rk:276]]\n"
+         "- Щупом проверить зазор [[yamz236_rk:43]]\n**Ограничения**\nВ руководствах разночтение про 15 минут")
+    out, removed = rules.disputed_lines(t, rules.CONFLICTS)
+    assert len(removed) == 1 and "Щупом" in out and "разночтение" in out
+
+
+def test_ticket_operations_use_conservative_condition():
+    ops, changed = rules.resolve_disputed_ops(
+        ["Отрегулировать тепловые зазоры на холодном двигателе или не ранее чем через 15 минут после остановки.",
+         "Проверить затяжку гаек стоек коромысел"], rules.CONFLICTS)
+    assert ops[0] == "Отрегулировать тепловые зазоры на холодном двигателе." and len(changed) == 1

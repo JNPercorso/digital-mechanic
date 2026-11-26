@@ -284,7 +284,7 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
         for x in allowed_numbers:  # оценка и точность из результата проверки ML - не нормативы
             body = body.replace(x, "")
         ban = _BAN.search(s) and "[[" not in s  # запрет эксплуатации - только со ссылкой на страницу руководства
-        if not ban and ("наблюд" in section or "слышно" in section or "[[" in s or not _NUM.search(body)):
+        if not ban and ("наблюд" in section or "слышно" in section or "противореч" in section or "[[" in s or not _NUM.search(body)):
             out.append(line)
         else:
             removed.append(s)
@@ -343,7 +343,7 @@ def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, l
             out.append(line)
             continue
         cites = CITE.findall(s)
-        if not cites or any(k in section for k in ("наблюд", "слышно", "источник", "огранич")):
+        if not cites or any(k in section for k in ("наблюд", "слышно", "источник", "огранич", "противореч")):
             out.append(line)
             continue
         if "гипотез" in section:
@@ -379,3 +379,75 @@ def recurrence_note(sessions: list[dict], result: dict, tickets: list[dict]) -> 
     times = "раз" if n % 10 not in (2, 3, 4) or n % 100 in (12, 13, 14) else "раза"
     return (f"Повторяющийся дефект: {code} у этой машины уже находили {n} {times} "
             f"({'проверка' if n == 1 else 'проверки'} {when}){tail}.")
+
+
+# Известные противоречия в руководствах (подтверждены заказчиком). Агент не выбирает одну формулировку
+# как бесспорную: показывает обе с документами и страницами и рекомендует уточнить у специалиста.
+CONFLICTS = [
+    {
+        "id": "yamz236_valve_clearance",
+        "topic": "Условия регулировки тепловых зазоров клапанов",
+        "sources": [
+            ("yamz236_re", 31, "Тепловые зазоры регулировать на холодном двигателе или менее чем через 15 минут после его остановки."),
+            ("yamz236_rk", 269, "Проверить и подрегулировать тепловые зазоры клапанного механизма перед началом и по окончании обкатки, но не ранее, чем через 15 мин после остановки двигателя."),
+            ("yamz236_rk", 276, "Проверку регулировки зазоров в клапанном механизме производить на холодном двигателе или не ранее, чем через 15 минут после его остановки."),
+        ],
+        "decision": "Принято консервативное правило: регулировку тепловых зазоров выполнять на холодном двигателе. "
+                    "Формулировка «не ранее чем через 15 минут» сама по себе не подтверждает, что двигатель остыл.",
+        # формулировка спорного условия вне блока о противоречии: агент выдал бы её как бесспорную
+        "avoid": r"15\s*мин",
+        # в работах заявки спорная часть условия убирается, остаётся консервативный вариант
+        "strip": r"\s*(,\s*)?(или|либо)?\s*(не ранее|не менее|менее|не позднее)[^.;]*?15\s*мин\w*[^.;]*",
+        "keep": "на холодном двигателе",
+    },
+]
+
+
+def conflicts_for_pages(pages: set[tuple]) -> list[dict]:
+    """Противоречия, к которым относится хотя бы одна из найденных страниц."""
+    return [c for c in CONFLICTS if any((d, p) in pages for d, p, _ in c["sources"])]
+
+
+def conflict_block(c: dict) -> str:
+    """Блок ответа: обе формулировки со ссылками, отметка о противоречии, что делать."""
+    lines = [f"**Противоречие в документации: {c['topic'].lower()}**"]
+    for d, p, q in c["sources"]:
+        lines.append(f"- {BY_ID[d].title}, стр. PDF {p}: «{q}» [[{d}:{p}]]")
+    lines.append(c["decision"])
+    lines.append("Какая формулировка верна для вашей модификации двигателя, уточните у специалиста "
+                 "или производителя.")
+    return chr(10).join(lines)
+
+
+def disputed_lines(text: str, conflicts: list[dict]) -> tuple[str, list[str]]:
+    """Убирает строки, где спорное условие подано как бесспорное (вне блока о противоречии и ограничений)."""
+    pats = [re.compile(c["avoid"], re.I) for c in conflicts if c.get("avoid")]
+    if not pats:
+        return text, []
+    out, removed, section = [], [], ""
+    for line in text.split(chr(10)):
+        s = line.strip()
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^\*\*(Противоречие[^*]*)\*\*", s)
+        if h:
+            section = h.group(1).lower()
+        if not h and not any(k in section for k in ("противореч", "огранич")) and any(p.search(s) for p in pats):
+            removed.append(s)
+        else:
+            out.append(line)
+    return chr(10).join(out), removed
+
+
+def resolve_disputed_ops(ops: list[str], conflicts: list[dict]) -> tuple[list[str], list[str]]:
+    """Работы заявки однозначны: спорную часть условия заменяем консервативным вариантом."""
+    out, changed = [], []
+    for o in ops:
+        new = o
+        for c in conflicts:
+            if c.get("avoid") and re.search(c["avoid"], new, re.I):
+                new = re.sub(c["strip"], "", new, flags=re.I).strip()
+                if c["keep"] not in new.lower():
+                    new = new.rstrip(".") + f" ({c['keep']})"
+        out.append(new)
+        if new != o:
+            changed.append(f"{o} -> {new}")
+    return out, changed
