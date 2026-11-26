@@ -234,5 +234,12 @@ def page_text(doc_id: str, page: int) -> str | None:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["build"]:
         build(reuse_ocr="--reuse-ocr" in sys.argv)
+    elif sys.argv[1:2] == ["fix-symbols"]:  # заменить символы шрифта Symbol в готовой базе без пересборки
+        pages = json.loads(PAGES_FILE.read_text(encoding="utf-8"))
+        pages = {k: [fix_symbols(t) for t in v] for k, v in pages.items()}
+        chunks = [{**c, "text": fix_symbols(c["text"])} for c in json.loads(CHUNKS_FILE.read_text(encoding="utf-8"))]
+        PAGES_FILE.write_text(json.dumps(pages, ensure_ascii=False), encoding="utf-8")
+        CHUNKS_FILE.write_text(json.dumps(chunks, ensure_ascii=False), encoding="utf-8")
+        print("Символы заменены")
     else:
-        print("Использование: python -m app.rag build")
+        print("Использование: python -m app.rag build [--reuse-ocr] | fix-symbols")
