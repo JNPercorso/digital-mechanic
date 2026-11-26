@@ -6,8 +6,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-MANUALS_DIR = ROOT / "manuals"
+from app import settings
+
+MANUALS_DIR = Path(settings.MANUALS_DIR)
 
 
 @dataclass(frozen=True)

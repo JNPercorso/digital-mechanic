@@ -32,5 +32,10 @@ LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "1"))
 PRICE_IN_PER_M = float(os.getenv("PRICE_IN_PER_M", "78.87"))
 PRICE_OUT_PER_M = float(os.getenv("PRICE_OUT_PER_M", "236.56"))
 
+# База знаний: PDF руководств и поисковый индекс хранятся вне репозитория (авторские права),
+# путь задаётся здесь - можно подключить папку на другом диске или сетевом хранилище
+MANUALS_DIR = _path(os.getenv("MANUALS_DIR", "manuals"))
+INDEX_DIR = _path(os.getenv("INDEX_DIR", "index"))
+
 DB_PATH = _path(os.getenv("DB_PATH", "data/mechanic.db"))
 LOG_DIR = _path(os.getenv("LOG_DIR", "logs"))

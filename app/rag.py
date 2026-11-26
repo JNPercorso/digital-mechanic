@@ -15,9 +15,10 @@ from pathlib import Path
 import snowballstemmer
 from rank_bm25 import BM25Okapi
 
+from app import settings
 from app.manuals import MANUALS, MANUALS_DIR, BY_ID, manuals_for_engine
 
-INDEX_DIR = Path(__file__).resolve().parent.parent / "index"
+INDEX_DIR = Path(settings.INDEX_DIR)
 CHUNKS_FILE = INDEX_DIR / "chunks.json"
 PAGES_FILE = INDEX_DIR / "pages.json"
 
