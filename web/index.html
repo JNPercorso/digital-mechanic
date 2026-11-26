@@ -680,6 +680,16 @@ async function say(id){const text=SAY[id];if(!text)return;stopSay();const run=sa
   if(run!==sayRun)return;if(i+1<parts.length)next=ttsFetch(parts[i+1]);next.catch(()=>{});
   await new Promise(res=>{sayAudio=new Audio(url);sayAudio.onended=sayAudio.onerror=res;sayAudio.play().catch(res);});URL.revokeObjectURL(url);if(run!==sayRun)return;}
  if(run===sayRun){speakingId=null;sayAudio=null;spkIcons();}}
+// Голосовой ввод вопроса (распознавание браузера): повторное нажатие прекращает без отправки
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false,micStopped=false;
+function micState(on){listening=on;const b=$('bMic');if(b){b.classList.toggle('on',on);b.title=on?'Слушаю… нажмите, чтобы остановить':'Сказать голосом';}const a=$('ask');if(a&&sel)a.placeholder=on?'Слушаю…':'Вопрос по руководству '+sel.engine;}
+function micClick(v){if(busy)return;if(!SR){addChat('<div class="note n-warn"><i class="ti ti-microphone-off"></i>Голосовой ввод в этом браузере недоступен. Напишите вопрос текстом.</div>');return;}
+ if(listening){micStopped=true;try{rec.abort();}catch(e){}micState(false);logEv('voice','распознавание остановлено');return;}micStopped=false;stopSay();
+ const base=($('ask')?.value||'').trim();rec=new SR();rec.lang='ru-RU';rec.interimResults=true;rec.continuous=false;
+ rec.onresult=e=>{if(micStopped)return;let t='';for(const r of e.results)t+=r[0].transcript;const a=$('ask');if(a)a.value=base?base+' '+t.trim():t;};
+ rec.onerror=e=>{logEv('voice','ошибка распознавания: '+e.error);if(e.error==='not-allowed'||e.error==='service-not-allowed')addChat('<div class="note n-warn"><i class="ti ti-microphone-off"></i>Нет доступа к микрофону. Разрешите микрофон для этого сайта.</div>');};
+ rec.onend=()=>{micState(false);if(micStopped)return;const a=$('ask');if(a&&a.value.trim()){logEv('voice','распознано: '+a.value.trim());runAsk(v);}};
+ try{rec.start();micState(true);logEv('voice','слушаю');}catch(e){micState(false);}}
 document.addEventListener('click',e=>{const b=e.target.closest('.spk');if(!b)return;e.stopPropagation();if(speakingId===b.dataset.sid){stopSay();logEv('voice','озвучка остановлена');}else say(b.dataset.sid);});
 
 // ===== Оформление: светлая/тёмная, «Стекло»/«Неон 80-х»
