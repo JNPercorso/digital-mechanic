@@ -22,6 +22,15 @@ from app import settings  # noqa: E402
 
 BASE = "http://localhost:8000"
 ASK = "Как проверить этот узел и какие нормативы по руководству?"
+# Контрольные вопросы механика (с --ask задаются по очереди): по узлу, о технике вперемешку с посторонним,
+# совсем не о технике, об истории машины, о противоречии в руководствах
+QUESTIONS = [
+    ASK,
+    "А какая температура двигателя считается нормальной и какая температура погоды считается хорошей?",
+    "Какая сегодня погода?",
+    "Когда были прошлые проверки этой машины и что нашли?",
+    "Тепловые зазоры клапанов регулировать на горячем или на холодном двигателе?",
+]
 RULE_EVENTS = ("rejected_citations", "rejected_refs", "rejected_operations", "removed_unsupported",
                "removed_unverified", "rule_search_required", "low_confidence_confirmed", "crash")
 
@@ -53,7 +62,7 @@ def summarize(kind: str, v: dict, evs: list[dict]) -> dict:
     draft = next((e for e in evs if e["type"] == "ticket_draft"), None)
     rules = rule_log(m.get("request_id", "")) if m else []
     return {
-        "scenario": kind, "vehicle": v["vehicle_id"], "engine": v["engine_model"], "status": last["status"],
+        "scenario": kind, "question": "", "vehicle": v["vehicle_id"], "engine": v["engine_model"], "status": last["status"],
         "fault": last.get("anomaly_type"), "score": last.get("anomaly_score"), "confidence": last.get("confidence"),
         "signal": last.get("signal_quality"),
         "warning": " | ".join(e["text"] for e in evs if e["type"] == "warning"),
@@ -100,7 +109,8 @@ def main() -> None:
         for v in vehicles:
             plan = [("diagnose", f"/api/diagnose/{v['vehicle_id']}", None)]
             if "--ask" in sys.argv and v["sessions"][-1]["status"] == "anomaly":
-                plan.append(("ask", "/api/ask", {"vehicle_id": v["vehicle_id"], "text": ASK}))
+                q = QUESTIONS[len(runs) % len(QUESTIONS)]
+                plan.append(("ask", "/api/ask", {"vehicle_id": v["vehicle_id"], "text": q}))
             for kind, url, body in plan:
                 try:
                     evs = sse(url, body)
