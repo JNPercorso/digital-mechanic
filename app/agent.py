@@ -146,6 +146,7 @@ class Run:
         self._remember_numbers({k: self.v.get(k) for k in ("vehicle_id", "garage_no", "model", "make", "engine_model")})
         self.conflicts: dict[str, dict] = {}  # противоречия в документации, найденные в этом запросе
         self.recur = ""                   # повтор того же дефекта в истории машины (строка для наблюдений)
+        self.diagnosed = True             # диагностика по последней проверке уже была в этом чате
         self.allow_draft = True           # в чате после диагностики черновик уже есть - второй не делаем
         self.need_diag_first = False      # вопрос в чате, а диагностики по последней проверке ещё не было
         self.diag_requested = False
@@ -238,6 +239,14 @@ class Run:
                 out["priority_meaning"] = rules.URGENCY_MEANING[urg]
             elif self.result.get("status") == "normal":
                 out["priority_meaning"] = "отклонений нет, машина работает"
+                prev = [x for x in self.v["sessions"] if x.get("status") == "anomaly"
+                        and x.get("session_id") != self.result.get("session_id")]
+                if prev:
+                    p = prev[-1]
+                    out["previous_anomaly"] = (f"ранее, {'.'.join(reversed(str(p.get('checked_at', ''))[:10].split('-')))}, было отклонение "
+                                               f"«{p.get('anomaly_title')}»: упомяни это и посоветуй проверить, "
+                                               "устранено ли оно")
+            self._remember_numbers(out)  # даты и оценки из результата - не нормативы
             return out, evs
         if name == "get_vehicle_history":
             evs.append(self.ev("step", text="Смотрю историю проверок и заявок машины", tool=name))
@@ -282,6 +291,13 @@ class Run:
             return out, evs
         if name == "show_in_chat":
             what = "ticket" if args.get("what") == "ticket" else "result"
+            last = services.latest_session(self.v["vehicle_id"])["session_id"]
+            if what == "ticket" and not store.has_draft(self.v["vehicle_id"], last):
+                return {"error": "Черновика заявки по последней проверке нет. Скажи об этом механику; "
+                                 "заявка готовится после диагностики, если найдено отклонение."}, evs
+            if what == "result" and not self.diagnosed:
+                return {"error": "Диагностики по последней проверке в этом чате ещё не было. Предложи механику "
+                                 "нажать «Получить результат диагностики»."}, evs
             evs.append({"type": "show", "what": what})
             return {"ok": True, "note": "Показано в чате механика"}, evs
         if name == "draft_ticket":
@@ -466,7 +482,12 @@ class Run:
                 if _LEAK.search(text):  # в ответ попало внутреннее устройство агента
                     store.log_event("blocked_leak", {"text": text[:2000]}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
-                    text, refs = ABOUT, []
+                    kept = [ln for ln in text.split(chr(10)) if not _LEAK.search(ln)]
+                    rest = chr(10).join(kept).strip()
+                    # убираем только строки с устройством; если ничего полезного не осталось - стандартная фраза
+                    text = rest if len(rest) > 60 else ABOUT
+                    if text == ABOUT:
+                        refs = []
                 text = rules.mark_hypotheses(rules.drop_empty_sections(text))
                 text, en = rules.russify_terms(text)
                 if en:
@@ -586,6 +607,7 @@ async def ask(vehicle_id: str, text: str, history: list[dict] | None = None,
     run = Run(vehicle_id, require_search=True)
     run.need_diag_first = not diagnosed
     run.allow_draft = not diagnosed
+    run.diagnosed = diagnosed
     store.log_event("question", {"text": text}, actor="mechanic", request_id=run.id, vehicle_id=vehicle_id)
     run._remember_numbers(text)  # числа из вопроса механика (например, «минус 30») - не нормативы
     msgs = [_system(run), *(history or [])[-6:], {"role": "user", "content": text}]

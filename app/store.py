@@ -114,3 +114,8 @@ def _decode(r: dict) -> dict:
     r["payload"] = json.loads(r["payload"])
     r["extra"] = json.loads(r["extra"] or "{}")
     return r
+
+
+def has_draft(vehicle_id: str, session_id: str) -> bool:
+    """Есть ли черновик заявки по этой проверке (для «покажи заявку»)."""
+    return bool(_rows("SELECT 1 FROM tickets WHERE vehicle_id=? AND session_id=? LIMIT 1", (vehicle_id, session_id)))

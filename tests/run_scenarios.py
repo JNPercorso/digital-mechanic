@@ -111,7 +111,7 @@ def summarize(kind: str, v: dict, evs: list[dict]) -> dict:
 def problems(s: dict) -> list[str]:
     """Нарушения требований заказчика, которые видно по журналу."""
     p = []
-    if s["status"] == "check_failed" and (s["draft"] or s["llm_calls"]):
+    if s["scenario"] == "diagnose" and s["status"] == "check_failed" and (s["draft"] or s["llm_calls"]):
         p.append("сбой записи, но модель вызвана или есть заявка")
     if s["signal"] == "warning" and not s["warning"] and s.get("_checked"):
         p.append("запись с помехами без предупреждения")
