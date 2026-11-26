@@ -105,7 +105,7 @@ def main() -> None:
                 if tag == "web":
                     open_vehicle(page, v_low)
                     diagnose(page)
-                    tk = page.locator("#chat .chat-ticket .ticket").last
+                    tk = page.locator(".ticket:visible").last
                     check(f"[{tag}] низкая точность: черновик с предупреждением и галочкой",
                           tk.count() > 0 and tk.locator("[data-lowok]").count() == 1)
                     send = tk.locator('[data-tk="send"]')
@@ -124,7 +124,7 @@ def main() -> None:
                     page.wait_for_timeout(300)
                     tk.locator("[data-lowok]").click()
                     page.wait_for_timeout(300)
-                    tk = page.locator("#chat .chat-ticket .ticket").last
+                    tk = page.locator(".ticket:visible").last
                     tk.locator('[data-tk="send"]').click()
                     page.wait_for_selector("text=создана в ТОиР", timeout=30_000)
                     page.wait_for_timeout(800)
@@ -137,7 +137,7 @@ def main() -> None:
                 diagnose(page)
                 check(f"[{tag}] отклонение: заголовок «Результат диагностики» с датой проверки",
                       page.locator("#chat .dhead").count() > 0 and "проверка" in page.inner_text("#chat .dhead"))
-                tk = page.locator("#chat .chat-ticket .ticket").last
+                tk = page.locator(".ticket:visible").last
                 parts = tk.inner_text() if tk.count() else ""
                 check(f"[{tag}] черновик: запчасти или пометка «не найдены в руководстве»",
                       "Запчасти" in parts and (("не найдены" in parts) or ("." in parts.split("Запчасти", 1)[1][:200])))
