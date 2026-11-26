@@ -86,8 +86,8 @@ def test_quote_must_be_on_page():
 
 # ---------- числа без ссылки, работы в заявке ----------
 def test_numbers_need_citation():
-    text = ("**Наблюдения**\nОценка отклонения 0,72\n**Проверки**\n1. Зазор 0,30 мм\n"
-            "2. Зазор 0,40 мм [[yamz536_re:173]]\n3. Снять крышку (рисунок 46)")
+    text = ("**Наблюдения**\nОценка отклонения 0,72\n**Проверки**\n1. Зазор 0,30 мм\n\n"
+            "2. Зазор 0,40 мм [[yamz536_re:173]]\n3. Снять крышку (рисунок 46)")  # п.1 - отдельный абзац без ссылки
     out, removed = rules.unsupported_lines(text, {"0,72"})  # 0,72 - из результата проверки ML
     assert removed == ["1. Зазор 0,30 мм"]
     assert "Оценка отклонения 0,72" in out and "рисунок 46" in out
@@ -185,3 +185,20 @@ def test_offtopic_long_answer_detected():
     poem = "Трактор едет по полям, рокот слышен тут и там. Солнце светит, ветер дует, тракторист весь день колдует над землёй."
     assert rules.looks_offtopic(poem, 0, [], v)
     assert not rules.looks_offtopic("Госномер T792HO98, двигатель ЯМЗ-236М2, гаражный Г-112. " * 3, 0, [], v)
+
+
+def test_one_citation_covers_list_block():
+    page = "Давление масла прогретого двигателя: при номинальной частоте 400-635 кПа, на холостом ходу не менее 100 кПа"
+    text = ("**Проверки**\nДавление масла прогретого двигателя:\n- при номинальной частоте 400–635 кПа\n"
+            "- на холостом ходу 150 кПа [[yamz536_re:49]]\n\nОтдельно: 0,5 мм")
+    out, removed = rules.unsupported_lines(text)
+    assert removed == ["Отдельно: 0,5 мм"]  # строки списка опираются на ссылку блока, отдельный абзац - нет
+    out2, removed2 = rules.unverified_cited_lines(out, lambda d, p: page)
+    assert "- при номинальной частоте 400–635 кПа" in out2   # числа блока есть на странице
+    assert any("150" in x for x in removed2)                  # 150 кПа на странице нет - строка убрана
+
+
+def test_absence_statement_not_verified_against_page():
+    out, removed = rules.unverified_cited_lines("Значение давления в руководстве не приведено [[yamz236_rk:45]]",
+                                                lambda d, p: "Испытания двигателя")
+    assert not removed

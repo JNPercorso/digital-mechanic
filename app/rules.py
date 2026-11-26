@@ -267,6 +267,30 @@ _BAN = re.compile(r"(эксплуатац|эксплуатир|выпуск|вы
 _NOT_NORM = re.compile(r"(стр\.?|страниц\w*|рисун\w*|рис\.|таблиц\w*|F\d\d|S-\d+|№\s?\d+)\s*\d*", re.I)
 
 
+def _block_cites(lines: list[str]) -> list[list]:
+    """Для каждой строки - ссылки её блока (абзац или список до пустой строки или заголовка).
+    Модель часто ставит одну ссылку на весь список нормативов, а не в каждую строку."""
+    out, cur, idx = [], [], []
+    def flush():
+        cites = [c for i in idx for c in CITE.findall(lines[i])]
+        for _ in idx:
+            out.append(cites)
+        idx.clear()
+    for i, line in enumerate(lines):
+        st = line.strip()
+        if not st or re.match(r"^\*\*(.+?)\*\*\s*$", st) or re.match(r"^#+\s", st):
+            flush()
+            out.append([])
+            continue
+        idx.append(i)
+    flush()
+    return out
+
+
+_ABSENT = re.compile(r"не\s+(приведен|указан|найден|описан|содерж)|нет\s+(данных|сведений|значени|норматив)|отсутству|"
+                     r"в\s+руководств\w*[^.]{0,40}нет", re.I)
+
+
 def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tuple[str, list[str]]:
     """Числа из руководства только со ссылкой: строка с числом без [[...]] убирается.
 
@@ -274,7 +298,9 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
     нумерация пунктов, номера страниц, рисунков, таблиц, кодов неисправностей и проверок.
     """
     out, removed, section = [], [], ""
-    for line in text.split(chr(10)):
+    lines = text.split(chr(10))
+    block = _block_cites(lines)
+    for li, line in enumerate(lines):
         s = line.strip()
         h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^#+\s*(.+)$", s)
         if h:
@@ -288,7 +314,8 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
             body = body.replace(x, "")
         ban = (_BAN.search(s) or (_MANUAL_CLAIM.search(s) and not _NO_MANUAL.search(s))) and "[[" not in s
         # запрет эксплуатации и ссылка на руководство на словах - только со ссылкой на страницу
-        if not ban and ("противореч" in section or "[[" in s or not _NUM.search(body)):
+        cited = "[[" in s or bool(block[li])  # ссылка в строке или в её блоке (одна ссылка на весь список)
+        if not ban and ("противореч" in section or cited or not _NUM.search(body)):
             out.append(line)
         else:
             removed.append(s)
@@ -331,7 +358,8 @@ def no_instruction_text(result: dict, engine: str, problem: str = "") -> str:
             f"{n2(result.get('confidence') or 0)}. Оформите дефектовку по порядку автопарка.")
 
 
-def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, list[str]]:
+def unverified_cited_lines(text: str, page_text, node: str = "",
+                           allowed_numbers: set[str] = frozenset()) -> tuple[str, list[str]]:
     """Строка со ссылкой должна опираться на эту страницу: её числа и большая часть слов есть на ней.
 
     Иначе это гипотеза, оформленная как цитата руководства (ошибка): строку убираем.
@@ -339,7 +367,9 @@ def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, l
     не проверяются (в гипотезах ссылки просто снимаются).
     """
     out, removed, section = [], [], ""
-    for line in text.split(chr(10)):
+    lines = text.split(chr(10))
+    block = _block_cites(lines)
+    for li, line in enumerate(lines):
         s = line.strip()
         h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^#+\s*(.+)$", s)
         if h:
@@ -347,7 +377,20 @@ def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, l
             out.append(line)
             continue
         cites = CITE.findall(s)
-        if not cites or any(k in section for k in ("наблюд", "слышно", "источник", "огранич", "противореч")):
+        if any(k in section for k in ("наблюд", "слышно", "источник", "огранич", "противореч")) or _ABSENT.search(s):
+            out.append(line)  # наблюдения, служебные разделы и «в руководстве этого нет» со страницей не сверяются
+            continue
+        if not cites:
+            # строка списка без своей ссылки: её нормативы сверяем со страницами ссылки блока
+            body = _NOT_NORM.sub("", _MODEL.sub("", re.sub(r"^(\d+[.)]|[-•*])\s+", "", s)))
+            for x in sorted(allowed_numbers, key=len, reverse=True):
+                body = body.replace(x, "")
+            nums = _NUM.findall(body)
+            if block[li] and nums and "гипотез" not in section:
+                pt = _norm(chr(10).join(page_text(d, int(p)) or "" for d, p in block[li]))
+                if not all(_norm(n) in pt for n in nums):
+                    removed.append(s)
+                    continue
             out.append(line)
             continue
         if "гипотез" in section:
