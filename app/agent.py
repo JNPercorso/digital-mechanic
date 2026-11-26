@@ -28,6 +28,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 7. Результат проверки, который уже есть в сообщении, повторно не запрашивай.
 8. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
 9. Если найденные инструкции противоречат друг другу, не выбирай одну как бесспорную: покажи обе формулировки со ссылками, отметь противоречие и рекомендуй уточнить у специалиста или производителя для этой модификации двигателя.
+10. Если вопрос не о машине, двигателе, проверках, заявках или ремонте (погода, новости, личные темы) - инструменты не вызывай, ответь одной фразой: «Я помогаю только по технике и руководствам на двигатель, с этим вопросом не подскажу».
 
 Ответ на результат проверки с отклонением - в таком порядке, с заголовками:
 **Наблюдения** - что показала проверка: признаки, оценка отклонения, точность распознавания.
@@ -100,6 +101,7 @@ class Run:
         self.result: dict | None = None   # последний полученный результат проверки
         self.node = ""                    # тип неисправности, по которому отвечаем (кнопка диагностики)
         self.draft_nudged = False
+        self.data_numbers: set[str] = set()  # числа из данных машины (не нормативы)
         self.conflicts: dict[str, dict] = {}  # противоречия в документации, найденные в этом запросе
         self.recur = ""                   # повтор того же дефекта в истории машины (строка для наблюдений)
         self.drafted = False              # черновик заявки создан в этом запросе
@@ -118,13 +120,26 @@ class Run:
             r["sq"] = self.page_queries.get((r["doc_id"], r["page"]), "")
 
     def ml_numbers(self) -> set[str]:
-        """Числа из результата проверки (оценка, точность) в том виде, как их пишет модель."""
-        out = set()
+        """Числа из результатов проверок и истории машины (оценка, точность, даты, номера проверок и заявок):
+        это данные машины, а не нормативы руководства, ссылка на страницу для них не нужна."""
+        out = set(self.data_numbers)
         for k in ("anomaly_score", "confidence"):
             x = (self.result or {}).get(k)
             if isinstance(x, (int, float)):
                 out |= {f"{x:.2f}".replace(".", ","), f"{x:.2f}", f"{x:g}".replace(".", ","), f"{x:g}"}
         return out
+
+    def _remember_numbers(self, data) -> None:
+        raw = json.dumps(data, ensure_ascii=False)
+        for y, m, d in re.findall(r"(\d{4})-(\d{2})-(\d{2})", raw):  # даты проверок в том виде, как их пишет модель
+            self.data_numbers |= {f"{d}.{m}.{y}", f"{d}.{m}", f"{int(d)}.{m}.{y}", y}
+        for x in re.findall(r"\d+(?:[.,]\d+)?", json.dumps(data, ensure_ascii=False)):
+            self.data_numbers |= {x, x.replace(".", ",")}
+            try:
+                f = float(x.replace(",", "."))
+                self.data_numbers |= {f"{f:.2f}".replace(".", ","), f"{f:g}".replace(".", ",")}
+            except ValueError:
+                pass
 
     def quality_warning(self) -> list[dict]:
         """Предупреждение о помехах или низкой точности - всегда, но один раз на проверку."""
@@ -161,6 +176,7 @@ class Run:
             except services.ServiceError as e:
                 return {"error": str(e)}, evs
             out = _short_result(self.result)
+            self._remember_numbers(out)
             evs += self.quality_warning()
             if rules.is_check_failed(self.result):
                 out["rule"] = "Сбой проверки: о двигателе выводов не делать, попросить повторить запись."
@@ -175,6 +191,7 @@ class Run:
             tickets = [{"ticket_id": t["toir_ticket_id"], "anomaly_type": t["payload"]["anomaly_type"],
                         "conclusion": t["payload"]["conclusion"], "urgency": t["payload"]["urgency"]}
                        for t in store.tickets_for(self.v["vehicle_id"])]
+            self._remember_numbers({"checks": hist, "tickets": tickets})
             return {"checks": hist, "tickets": tickets}, evs
         if name == "search_manual":
             q = (args.get("query") or "").strip()
@@ -320,12 +337,13 @@ class Run:
                 messages.append({"role": "assistant", "content": msg.get("content") or ""})
                 messages.append({"role": "user", "content": "Ответ пока не показан механику: сначала вызови draft_ticket - работы только со страниц с процедурой этого узла, к каждой странице дословная цитата. Если подходящей процедуры в найденном нет - поищи ещё; если её нет в руководстве, повтори ответ и скажи об этом."})
                 continue
-            if not fc and self.require_search and not self.seen_pages and not self.nudged:
+            if (not fc and self.require_search and not self.seen_pages and not self.nudged
+                    and "помогаю только по технике" not in (msg.get("content") or "")):  # вопрос не о технике - без поиска
                 # Код не принимает ответ без поиска по руководству: возвращаем модель к инструменту
                 self.nudged = True
                 store.log_event("rule_search_required", {}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
                 messages.append({"role": "assistant", "content": msg.get("content") or ""})
-                messages.append({"role": "user", "content": "Ответ не принят: ты не искал в руководстве. Если в ответе есть технические сведения, нормативы или рекомендации - вызови search_manual и ответь только по найденному, со ссылками. Если вопрос только об истории проверок этой машины - ответь без нормативов и рекомендаций по ремонту." + (" По результату с отклонением найди процедуру узла, вызови draft_ticket с дословными цитатами, затем ответь." if self.result and self.result.get("status") == "anomaly" and not rules.is_no_ticket(self.result) else "")})
+                messages.append({"role": "user", "content": "Ответ не принят: ты не искал в руководстве. Если в ответе есть технические сведения, нормативы или рекомендации - вызови search_manual и ответь только по найденному, со ссылками. Если вопрос только об истории проверок этой машины - ответь без нормативов и рекомендаций по ремонту. Если вопрос не о технике - ответь одной фразой, что с этим не помогаешь." + (" По результату с отклонением найди процедуру узла, вызови draft_ticket с дословными цитатами, затем ответь." if self.result and self.result.get("status") == "anomaly" and not rules.is_no_ticket(self.result) else "")})
                 continue
             if not fc:
                 content, disputed = rules.disputed_lines(msg.get("content") or "", list(self.conflicts.values()))

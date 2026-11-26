@@ -281,7 +281,7 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
         body = re.sub(r"\[\[[^\]]*\]\]", "", s)
         body = re.sub(r"^(\d+[.)]|[-•*])\s+", "", body)
         body = _NOT_NORM.sub("", body)
-        for x in allowed_numbers:  # оценка и точность из результата проверки ML - не нормативы
+        for x in sorted(allowed_numbers, key=len, reverse=True):  # данные машины (оценки, даты) - не нормативы
             body = body.replace(x, "")
         ban = _BAN.search(s) and "[[" not in s  # запрет эксплуатации - только со ссылкой на страницу руководства
         if not ban and ("наблюд" in section or "слышно" in section or "противореч" in section or "[[" in s or not _NUM.search(body)):
