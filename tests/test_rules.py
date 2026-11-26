@@ -202,3 +202,11 @@ def test_absence_statement_not_verified_against_page():
     out, removed = rules.unverified_cited_lines("Значение давления в руководстве не приведено [[yamz236_rk:45]]",
                                                 lambda d, p: "Испытания двигателя")
     assert not removed
+
+
+def test_citation_attached_when_numbers_on_found_page():
+    page = "Величины зазоров для впускных клапанов: 0,30 – 0,40 мм, для выпускных клапанов: 0,40 – 0,50 мм."
+    text = "Тепловые зазоры клапанов:\n- впускные: 0,30–0,40 мм\n- выпускные: 0,40–0,50 мм\n\nЗазор 0,77 мм"
+    out, att = rules.attach_citations(text, {("yamz536_re", 173): page})
+    assert att == ["yamz536_re:173"] and "0,50 мм [[yamz536_re:173]]" in out
+    assert "0,77 мм" in out and "0,77 мм [[" not in out  # числа нет на странице - ссылка не ставится
