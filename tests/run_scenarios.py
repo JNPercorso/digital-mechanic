@@ -30,6 +30,8 @@ QUESTIONS = [
     "Какая сегодня погода?",
     "Когда были прошлые проверки этой машины и что нашли?",
     "Тепловые зазоры клапанов регулировать на горячем или на холодном двигателе?",
+    # пограничный: похоже на погоду, но это вопрос о технике (пуск в мороз)
+    "На улице минус 30, можно ли заводить двигатель и что сделать перед пуском?",
 ]
 RULE_EVENTS = ("rejected_citations", "rejected_refs", "rejected_operations", "removed_unsupported",
                "removed_unverified", "rule_search_required", "low_confidence_confirmed", "crash")
