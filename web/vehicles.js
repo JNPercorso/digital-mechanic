@@ -28,10 +28,14 @@
       [52, 122].map(x => `<rect class="w" x="${x}" y="26" width="62" height="24" rx="2"/>`).join('') + `<rect class="w" x="192" y="26" width="36" height="24" rx="2"/><path class="w" d="M270 26h42l10 26h-52z"/>` +
       `<rect class="a" x="52" y="62" width="176" height="4"/><rect class="a" x="328" y="66" width="6" height="6"/><rect class="k" x="318" y="84" width="18" height="7" rx="2"/>` +
       arch(78, 21) + arch(288, 21) + wheel(78, 17) + wheel(288, 17),
-    'УАЗ Патриот': `<circle cx="22" cy="62" r="13" class="k"/><circle cx="22" cy="62" r="5" class="h"/><path class="b" d="M26 52L46 22H204L236 48L308 54Q322 56 322 68V90H26Z"/><path class="l" d="M46 18H200"/>` +
-      `<path class="w" d="M52 28h44v20H40z"/><rect class="w" x="102" y="28" width="48" height="20" rx="1"/><path class="w" d="M156 28h44l26 20h-70z"/><path class="l" d="M100 28v58M154 28v58M228 50v36"/>` +
-      `<rect class="a" x="310" y="60" width="8" height="6"/><rect class="a" x="30" y="58" width="5" height="10"/><rect class="k" x="24" y="86" width="300" height="5" rx="2"/>` +
-      arch(84, 20) + arch(268, 20) + wheel(84, 16) + wheel(268, 16),
+    // УАЗ Патриот: высокий «кирпич», почти вертикальное лобовое, короткий капот, рейлинги, расширители арок, запаска на задней двери
+    'УАЗ Патриот': `<path class="l" d="M66 7h136M72 7v5M196 7v5"/><path class="b" d="M52 20Q52 12 60 12H208L228 40L290 43Q298 44 298 52V86H52Z"/>` +
+      `<rect class="w" x="62" y="19" width="38" height="23" rx="2"/><rect class="w" x="106" y="19" width="42" height="23" rx="2"/><path class="w" d="M154 19h50l18 23h-68z"/>` +
+      `<path class="l" d="M103 16v68M151 16v68M222 44v40M62 54h232"/><rect class="k" x="44" y="34" width="10" height="36" rx="4"/>` +
+      `<path class="k" d="M66 88a30 30 0 0 1 60 0h-7a23 23 0 0 0-46 0z"/><path class="k" d="M222 88a30 30 0 0 1 60 0h-7a23 23 0 0 0-46 0z"/><rect class="k" x="126" y="84" width="96" height="4" rx="1"/>` +
+      `<rect class="a" x="290" y="49" width="7" height="7" rx="1"/><rect class="a" x="53" y="22" width="4" height="12"/><rect class="a" x="228" y="57" width="6" height="3"/>` +
+      `<rect class="k" x="288" y="80" width="14" height="8" rx="2"/><rect class="k" x="46" y="80" width="10" height="8" rx="2"/>` +
+      `<circle cx="96" cy="95" r="18" class="k"/><circle cx="96" cy="95" r="7" class="h"/><circle cx="252" cy="95" r="18" class="k"/><circle cx="252" cy="95" r="7" class="h"/>`,
     'Урал-4320-10': frame(14, 312) + `<path class="b" d="M14 28q0-10 10-10h172q10 0 10 10v44h-192z"/><path class="l" d="M60 18v54M110 18v54M160 18v54"/><rect class="f" x="14" y="72" width="192" height="12"/><rect class="a" x="20" y="75" width="30" height="4"/>` +
       uralCab(212) + arch(282) + wheel(58) + wheel(96) + wheel(282),
     'Урал-43206': frame(14, 316) + `<path class="b" d="M14 30q0-10 10-10h152q10 0 10 10v42h-172z"/><path class="l" d="M60 20v52M110 20v52M150 20v52"/><rect class="f" x="14" y="72" width="172" height="12"/><rect class="a" x="20" y="75" width="30" height="4"/>` +
