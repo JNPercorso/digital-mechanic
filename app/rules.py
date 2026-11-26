@@ -358,3 +358,24 @@ def unverified_cited_lines(text: str, page_text, node: str = "") -> tuple[str, l
         else:
             removed.append(s)
     return chr(10).join(out), removed
+
+
+def recurrence_note(sessions: list[dict], result: dict, tickets: list[dict]) -> str:
+    """Тот же тип неисправности уже был у этой машины: факт для наблюдений ответа (считает код, не модель)."""
+    code = result.get("anomaly_type")
+    if not code or result.get("status") != "anomaly":
+        return ""
+    prev = [s for s in sessions if s.get("session_id") != result.get("session_id")
+            and s.get("status") == "anomaly" and s.get("anomaly_type") == code]
+    if not prev:
+        return ""
+    def day(x):
+        d = str(x.get("checked_at", ""))[:10].split("-")
+        return f"{d[2]}.{d[1]}" if len(d) == 3 else ""
+    when = ", ".join(f"{x['session_id']} от {day(x)}" for x in prev[-3:])
+    tk = [t for t in tickets if t.get("payload", {}).get("anomaly_type") == code and t.get("toir_ticket_id")]
+    tail = f", заявки по нему: {', '.join(t['toir_ticket_id'] for t in tk[:3])}" if tk else ""
+    n = len(prev)
+    times = "раз" if n % 10 not in (2, 3, 4) or n % 100 in (12, 13, 14) else "раза"
+    return (f"Повторяющийся дефект: {code} у этой машины уже находили {n} {times} "
+            f"({'проверка' if n == 1 else 'проверки'} {when}){tail}.")

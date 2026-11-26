@@ -5,6 +5,7 @@
 Все шаги идут событиями в интерфейс (SSE): step, warning, answer, ticket_draft, metrics, done.
 """
 import json
+import re
 import time
 import uuid
 from typing import AsyncIterator
@@ -93,6 +94,7 @@ class Run:
         self.result: dict | None = None   # последний полученный результат проверки
         self.node = ""                    # тип неисправности, по которому отвечаем (кнопка диагностики)
         self.draft_nudged = False
+        self.recur = ""                   # повтор того же дефекта в истории машины (строка для наблюдений)
         self.drafted = False              # черновик заявки создан в этом запросе
         self.draft_problem = ""           # почему черновик не принят (для ответа механику)
         self.warned: set[str] = set()     # проверки, по которым предупреждение о качестве уже показано
@@ -315,6 +317,10 @@ class Run:
                 if rejected:
                     store.log_event("rejected_citations", {"refs": rejected}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
+                if self.recur:  # повтор дефекта - факт из истории, добавляет код в начало наблюдений
+                    m = re.search(r"^\*\*Наблюдения\*\*\s*$", text, re.M)
+                    line = f"- **{self.recur}**"
+                    text = (text[:m.end()] + chr(10) + line + text[m.end():]) if m else f"{line}{chr(10)}{chr(10)}{text}"
                 yield self.ev("answer", text=text, refs=refs, rejected=len(rejected),
                               searched=bool(self.seen_pages), engine=self.engine)
                 return
@@ -380,6 +386,7 @@ async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
     if run.result["status"] == "anomaly":
         # Первый поиск по узлу неисправности делает код: модели не нужен лишний вызов, чтобы его начать
         run.node = run.result.get("anomaly_type") or ""
+        run.recur = rules.recurrence_note(run.v["sessions"], run.result, store.tickets_for(vehicle_id))
         q = run.result.get("anomaly_title") or run.result.get("anomaly_type")
         found, evs = await run.tool("search_manual", {"query": q, "node_first": True})
         for e in evs:

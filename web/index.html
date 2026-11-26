@@ -151,6 +151,7 @@ button{font:inherit;cursor:pointer;color:inherit}
 .pv .pimg img{margin:auto;display:block;flex:none;user-select:none;-webkit-user-select:none}
 .pv .pvbody .page{margin-top:0;max-height:none;min-height:0;position:relative}
 .pv .ptab{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:13px}.pv .ptab td{border:1px solid var(--border-strong);padding:5px 7px;vertical-align:top}.pv .ptab tr.hl td{background:rgba(255,214,10,.18)}
+.pill .rep{margin-left:5px;font-weight:700;font-size:11px;padding:0 5px;border-radius:8px;background:rgba(0,0,0,.14)}html[data-scheme=dark] .pill .rep{background:rgba(255,255,255,.18)}
 .lowok{display:flex;gap:8px;align-items:flex-start;margin:8px 0 4px;font-size:13.5px;cursor:pointer}.lowok input{margin-top:3px;width:18px;height:18px;flex:none}
 .pv .pnav{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px}
 
@@ -428,7 +429,9 @@ function renderList(){const q=$('q').value.trim().toLowerCase();$('vehList').inn
 
 function renderMain(){
  if(!sel){$('paneMain').innerHTML='<div class="empty">'+LOGO+'<div style="font-size:20px;font-weight:300;color:var(--text)">Цифровой механик</div><div>Выберите машину в списке слева</div></div>';renderTicketPane();return;}
- const v=sel;const h=v.hist.map((x,i)=>`<span class="h" data-h="${i}" role="button" tabindex="0" title="Подробнее о проверке"><span class="pill ${ST[x[1]==='dev'?'dev':x[1]][0]}"><span class="pc">${x[2]||ST[x[1]][1]}</span><span class="pd">${x[0].slice(0,5)}</span></span><span class="hd">${x[0]}</span></span>`).join('');
+ const v=sel;const rep=i=>{const c=v.hist[i][2];if(!c||v.hist[i][1]==='ok'||v.hist[i][1]==='fail')return 0;return v.hist.slice(i).filter(y=>y[2]===c&&y[1]!=='ok'&&y[1]!=='fail').length;};
+ // Повторяющийся дефект: тот же код уже был раньше - метка «×N» (N-й раз по счёту)
+ const h=v.hist.map((x,i)=>{const n=rep(i);return `<span class="h" data-h="${i}" role="button" tabindex="0" title="${n>1?'Повторяющийся дефект: '+x[2]+', '+n+'-й раз. ':''}Подробнее о проверке"><span class="pill ${ST[x[1]==='dev'?'dev':x[1]][0]}"><span class="pc">${x[2]||ST[x[1]][1]}</span><span class="pd">${x[0].slice(0,5)}</span>${n>1?`<b class="rep">×${n}</b>`:''}</span><span class="hd">${x[0]}</span></span>`;}).join('');
  const tl=tickets[v.id]||[];const tk=tl.length?tl.length+' шт.':'';
  const tkCard=`<div class="card"><div class="chead"><span><svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>Заявки в ТОиР</span><span class="mut">${tl.length}</span></div>${tl.length?tl.slice().reverse().map(t=>`<div class="tkrow" onclick="openTicket('${v.id}','${t.no}')"><div><div style="font-weight:500">${t.no}</div><div class="mut">${t.date} ${t.time} · ${t.code} · ${t.prio}</div></div><span class="pill ${t.st==='Принята ТОиР'?'s-ok':'s-dev'}">${t.st}</span></div>`).join(''):'<div class="mut">Заявок по этой машине ещё не было</div>'}</div>`;
  const [lc,lt]=ST[v.sc];const last=v.hist[0];
