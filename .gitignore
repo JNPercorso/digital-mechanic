@@ -1,0 +1,12 @@
+.env
+certs/
+*.crt
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+manuals/*.pdf
+index/
+data/*.db
+logs/
+temp/
