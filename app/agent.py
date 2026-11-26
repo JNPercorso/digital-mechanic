@@ -54,7 +54,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 **Источник** - список страниц руководства, на которые опирается ответ, ссылками [[doc_id:страница]].
 **Ограничения** - чего в руководстве нет или что требует проверки на месте.
 Запрет эксплуатации или выпуска в рейс пиши только если на найденной странице руководства прямо сказано, что эксплуатация запрещена, и ставь ссылку на неё; иначе это рекомендация.
-По запросу диагностики сначала получи результат проверки (get_check_result), дальше действуй по результату: норма - коротко, отклонение - найди процедуру узла в руководстве, запчасти узла (find_parts) и подготовь черновик заявки.
+По запросу диагностики сначала получи результат проверки (get_check_result), дальше действуй по результату: норма - коротко, отклонение - найди процедуру узла в руководстве (ищи словами из search_hint), запчасти узла (find_parts) и подготовь черновик заявки. Не трать больше 2-3 поисков: готовь черновик по найденному.
 Запчасти бери из find_parts (обозначения деталей узла из руководства) - только нужные для работ заявки.
 Сначала найди процедуру проверки, регулировки или ремонта именно этого узла, затем вызови draft_ticket и после этого дай ответ механику. В draft_ticket к каждой странице приложи дословную цитату с неё (одно-два предложения), работы бери только с этих страниц. Оглавление и общие разделы, где узел не упомянут, не годятся. Если подходящей процедуры нет - draft_ticket не вызывай и скажи, что в руководстве на этот двигатель нет инструкции по этой неисправности. Номер черновика не упоминай: механик видит черновик рядом с ответом.
 
@@ -252,6 +252,7 @@ class Run:
                 urg, _ = rules.urgency_reason(self.result)
                 out["priority"] = rules.PRIORITY_RU[urg]
                 out["priority_meaning"] = rules.URGENCY_MEANING[urg]
+                out["search_hint"] = rules.node_query(self.result)  # слова узла неисправности для поиска в руководстве
             elif self.result.get("status") == "normal":
                 out["priority_meaning"] = "отклонений нет, машина работает"
                 out["rule"] = "Отклонений нет: коротко скажи, что двигатель в норме; руководство не ищи, заявку не делай."
@@ -424,8 +425,9 @@ class Run:
             waiting.append(1)
 
         for _ in range(MAX_TOOL_CALLS + 2):
+            limit = MAX_TOOL_CALLS + (2 if self.mode == "diagnose" else 0)
             funcs = ([f for f in FUNCTIONS if self.allow_draft or f["name"] != "draft_ticket"]
-                     if self.tool_calls < MAX_TOOL_CALLS else None)
+                     if self.tool_calls < limit else None)
             try:
                 res = await llm.chat(messages, funcs, on_wait=on_wait)
             except llm.LLMError as e:
@@ -556,6 +558,10 @@ class Run:
                 yield self.ev("answer", text=rules.check_failed_text(self.result), refs=[])
                 return
             messages.append({"role": "assistant", "content": "", "function_call": {"name": fc["name"], "arguments": args}})
+            if (self.node and not self.drafted and self.allow_draft and isinstance(out, dict)
+                    and self.tool_calls >= MAX_TOOL_CALLS + (2 if self.mode == "diagnose" else 0) - 2):
+                out["note_steps"] = ("Осталось мало действий: подготовь черновик (draft_ticket) по уже найденным страницам "
+                                     "или скажи механику, что подходящей инструкции в руководстве нет.")
             messages.append({"role": "function", "name": fc["name"], "content": json.dumps(out, ensure_ascii=False)})
         yield self.ev("error", text="Агент не уложился в лимит шагов, уточните вопрос")
 
