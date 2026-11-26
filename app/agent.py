@@ -23,7 +23,9 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 3. Если в найденных фрагментах ответа нет - так и скажи: «В руководстве на этот двигатель этого нет» и рекомендуй дефектовку. Не бери данные с другого двигателя.
 4. Ты помощник: окончательное решение о двигателе принимает механик.
 5. Отвечай только на заданный вопрос, не добавляй сведения, о которых не спрашивали.
-6. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
+6. Не используй английские термины (confidence, score, anomaly): говори «точность распознавания», «оценка отклонения»; дробные числа пиши через запятую.
+7. Результат проверки, который уже есть в сообщении, повторно не запрашивай.
+8. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
 
 Ответ на результат проверки с отклонением - в таком порядке, с заголовками:
 **Вердикт** - одна строка: что вероятно не так и насколько срочно.
@@ -111,6 +113,9 @@ class Run:
         evs = []
         if name == "get_check_result":
             sid = args.get("session_id") or services.latest_session(self.v["vehicle_id"])["session_id"]
+            if self.result and self.result.get("session_id") == sid:
+                # Результат этой проверки уже получен - повторно в ML-сервис не ходим
+                return _short_result(self.result), evs
             evs.append(self.ev("step", text=f"Запрашиваю результат проверки {sid}", tool=name))
             try:
                 self.result = await services.diagnose(self.v["vehicle_id"], sid)
@@ -151,11 +156,15 @@ class Run:
         if bad:
             store.log_event("rejected_refs", {"refs": bad}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
         ops = [o for o in (args.get("operations") or []) if str(o).strip()]
+        low = rules.is_low_confidence(r)
+        if low:
+            ops = [rules.recheck_operation(r)] + ops
         if not refs or not ops:
             return {"error": "Нет работ или ссылок на страницы, найденные поиском. Сначала найди процедуру в руководстве."}, evs
         urgency, why = rules.urgency_reason(r)
         payload = {"vehicle_id": self.v["vehicle_id"], "session_id": r["session_id"],
-                   "anomaly_type": r["anomaly_type"], "conclusion": str(args.get("conclusion", "")).strip(),
+                   "anomaly_type": r["anomaly_type"],
+                   "conclusion": ("Предварительно: " if low else "") + str(args.get("conclusion", "")).strip(),
                    "urgency": urgency, "operations": ops,
                    "spare_parts": [s for s in (args.get("spare_parts") or []) if str(s).strip()],
                    "references": [{"manual": x["manual"], "pdf_page": x["page"]} for x in refs]}
@@ -213,7 +222,6 @@ class Run:
                                     vehicle_id=self.v["vehicle_id"])
                 yield self.ev("answer", text=text, refs=refs, rejected=len(rejected),
                               searched=bool(self.seen_pages), engine=self.engine)
-                store.add_message(self.v["vehicle_id"], "assistant", text)
                 return
             args = fc.get("arguments") or {}
             if isinstance(args, str):
@@ -265,19 +273,18 @@ async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
     if run.result["status"] == "normal":
         user += "\nОтклонений нет: коротко скажи, что двигатель в норме и можно продолжать эксплуатацию. Руководство не ищи, заявку не делай."
     elif rules.is_low_confidence(run.result):
-        user += "\nТочность низкая: явно скажи, что вывод предварительный и нужна повторная проверка."
-    store.add_message(vehicle_id, "user", "Получить результат диагностики")
+        user += ("\nТочность распознавания низкая: явно скажи, что вывод предварительный и машина направляется на повторную дефектовку. "
+                 "В заявку включай только проверки и дефектовку по руководству, без ремонтных работ: повторную запись код добавит сам.")
     async for e in run.loop([_system(run), {"role": "user", "content": user}]):
         yield e
     yield {"type": "done"}
 
 
-async def ask(vehicle_id: str, text: str) -> AsyncIterator[dict]:
+async def ask(vehicle_id: str, text: str, client_id: str = "") -> AsyncIterator[dict]:
     """Вопрос механика в чате: агент сам решает, какие инструменты нужны."""
     run = Run(vehicle_id, require_search=True)
     store.log_event("question", {"text": text}, actor="mechanic", request_id=run.id, vehicle_id=vehicle_id)
-    history = [m for m in store.recent_messages(vehicle_id, 6)]
-    store.add_message(vehicle_id, "user", text)
+    history = store.chat_history(client_id, vehicle_id, 6)
     msgs = [_system(run), *history, {"role": "user", "content": text}]
     async for e in run.loop(msgs):
         yield e

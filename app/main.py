@@ -1,5 +1,6 @@
 """Веб-приложение: страница механика, API и поток событий агента (SSE)."""
 import json
+import re
 import time
 from pathlib import Path
 
@@ -27,10 +28,17 @@ def _rate_ok(ip: str) -> bool:
     return len(hits) <= RATE_LIMIT
 
 
-def _sse(gen):
+def _client(request: Request) -> str:
+    """Идентификатор браузера (из localStorage) - у каждого свой диалог по машине."""
+    return (request.headers.get("x-client-id") or "anon")[:64]
+
+
+def _sse(gen, client_id: str = "", vehicle_id: str = ""):
     async def stream():
         try:
             async for e in gen:
+                if client_id:
+                    store.add_chat(client_id, vehicle_id, e)
                 yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
         except Exception as ex:  # интерфейс не должен падать: показываем понятную ошибку
             store.log_event("crash", {"error": repr(ex)})
@@ -75,7 +83,9 @@ async def diagnose(vehicle_id: str, request: Request):
     _vehicle_or_404(vehicle_id)
     if not _rate_ok(request.client.host):
         raise HTTPException(429, "Слишком много запросов, подождите минуту")
-    return _sse(agent.diagnose(vehicle_id))
+    cid = _client(request)
+    store.add_chat(cid, vehicle_id, {"type": "user", "text": "Получить результат диагностики", "kind": "diagnose"})
+    return _sse(agent.diagnose(vehicle_id), cid, vehicle_id)
 
 
 @app.post("/api/ask")
@@ -83,7 +93,22 @@ async def ask(body: Ask, request: Request):
     _vehicle_or_404(body.vehicle_id)
     if not _rate_ok(request.client.host):
         raise HTTPException(429, "Слишком много запросов, подождите минуту")
-    return _sse(agent.ask(body.vehicle_id, body.text.strip()))
+    cid = _client(request)
+    store.add_chat(cid, body.vehicle_id, {"type": "user", "text": body.text.strip()})
+    return _sse(agent.ask(body.vehicle_id, body.text.strip(), cid), cid, body.vehicle_id)
+
+
+@app.get("/api/chat/{vehicle_id}")
+def chat(vehicle_id: str, request: Request):
+    """Сохранённый диалог по машине; черновики заявок - в текущем состоянии из базы."""
+    items = store.chat_items(_client(request), vehicle_id)
+    for it in items:
+        if it["type"] == "ticket_draft":
+            t = store.get_ticket(it["id"])
+            if t:
+                it.update(payload=t["payload"], extra=t["extra"], status=t["status"],
+                          toir_ticket_id=t["toir_ticket_id"])
+    return items
 
 
 class TicketEdit(BaseModel):
@@ -106,6 +131,9 @@ def edit_ticket(tid: int, body: TicketEdit):
             raise HTTPException(422, "Нужна хотя бы одна работа")
     if "spare_parts" in changes:
         changes["spare_parts"] = [s.strip() for s in changes["spare_parts"] if s.strip()]
+    if extra.get("low_confidence") and "operations" in changes:
+        must = rules.recheck_operation({})
+        changes["operations"] = [must] + [o for o in changes["operations"] if o != must]
     p.update(changes)
     extra["edited_by_mechanic"] = True
     store.update_ticket(tid, payload=p, extra=extra)
@@ -114,7 +142,7 @@ def edit_ticket(tid: int, body: TicketEdit):
 
 
 @app.post("/api/tickets/{tid}/send")
-async def send_ticket(tid: int):
+async def send_ticket(tid: int, request: Request):
     """«Отправить в ТОиР» - только по нажатию механика."""
     t = store.get_ticket(tid)
     if not t:
@@ -129,18 +157,61 @@ async def send_ticket(tid: int):
         raise HTTPException(502, str(e))
     store.update_ticket(tid, status="sent", toir_ticket_id=res["ticket_id"], sent_at=time.time())
     store.log_event("ticket_sent", res, actor="mechanic", vehicle_id=t["vehicle_id"])
+    store.add_chat(_client(request), t["vehicle_id"], {"type": "ticket_sent", "ticket_id": res["ticket_id"]})
     return store.get_ticket(tid)
 
 
+_PARA_START = re.compile(r"^(\d+(\.\d+)*[.)]?\s|[-–—•●]\s?|Рис\.|Рисунок|Таблица|ВНИМАНИЕ|ПРЕДУПРЕЖДЕНИЕ|Примечани)")
+
+
+def _reflow(text: str) -> list[str]:
+    """Склеивает строки PDF в абзацы: в части страниц каждое слово лежит отдельной строкой."""
+    paras, cur = [], ""
+    for line in text.split(chr(10)):
+        s = line.strip()
+        if not s:
+            continue
+        # Новый абзац: нумерация/маркер, конец предложения или строка с заглавной буквы (ячейки таблиц);
+        # аббревиатуры (ЯМЗ, «КАСО») абзац не начинают
+        title = re.match(r"^[А-ЯЁA-Z][а-яёa-z]", s) and len(cur.split()) >= 3
+        if cur and (_PARA_START.match(s) or re.search(r"[.:;!?]$", cur) or title):
+            paras.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}" if cur else s
+    if cur:
+        paras.append(cur)
+    return paras
+
+
+def _highlight(paras: list[str], q: str) -> list[list[dict]]:
+    """Помечает предложения страницы, которые лучше всего совпадают с фразой агента (по основам слов и числам)."""
+    qt = set(rag.tokenize(q))
+    out = []
+    scored = []
+    for pi, p in enumerate(paras):
+        sents = re.split(r"(?<=[.!?;])\s+", p)
+        out.append([{"t": s, "h": False} for s in sents])
+        for si, s in enumerate(sents):
+            st = set(rag.tokenize(s))
+            if qt and st:
+                score = len(qt & st) / len(qt) + 0.15 * len({t for t in qt & st if t[:1].isdigit()})
+                scored.append((score, pi, si))
+    for score, pi, si in sorted(scored, reverse=True)[:3]:
+        if score >= 0.3 and len(out[pi][si]["t"]) <= 400:
+            out[pi][si]["h"] = True
+    return out
+
+
 @app.get("/api/manuals/{doc_id}/{page}")
-def manual_page(doc_id: str, page: int):
-    """Текст страницы PDF для окна просмотра ссылки."""
+def manual_page(doc_id: str, page: int, q: str = ""):
+    """Страница PDF для окна просмотра ссылки: абзацы и подсветка фрагмента, на который сослался агент."""
     m = BY_ID.get(doc_id)
     text = rag.page_text(doc_id, page) if m else None
     if text is None:
         raise HTTPException(404, "Нет такой страницы")
-    return {"doc_id": doc_id, "manual": m.title, "page": page, "text": text,
-            "pages": len(rag._pages()[doc_id])}
+    return {"doc_id": doc_id, "manual": m.title, "page": page, "pages": len(rag._pages()[doc_id]),
+            "paras": _highlight(_reflow(text), q[:500])}
 
 
 @app.get("/api/manuals/{doc_id}/{page}/image")

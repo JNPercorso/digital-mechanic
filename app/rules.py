@@ -78,10 +78,18 @@ def urgency_reason(result: dict) -> tuple[str, str]:
     medium: остальные отклонения; low: вывод предварительный (низкая уверенность).
     """
     score, conf = result.get("anomaly_score") or 0, result.get("confidence") or 0
-    if is_low_confidence(result):
-        return "low", (f"Вывод предварительный: точность распознавания {conf:.2f}"
-                       f"{', запись с помехами' if result.get('signal_quality') == 'warning' else ''}"
-                       " - нужна повторная проверка")
+    n = lambda x: f"{x:.2f}".replace(".", ",")
     if score >= 0.8:
-        return "high", f"Сильное отклонение звука от нормы: оценка {score:.2f} при точности {conf:.2f}"
-    return "medium", f"Отклонение от нормы: оценка {score:.2f} при точности {conf:.2f}"
+        urgency, why = "high", f"Сильное отклонение звука от нормы: оценка {n(score)} при точности распознавания {n(conf)}"
+    else:
+        urgency, why = "medium", f"Отклонение от нормы: оценка {n(score)} при точности распознавания {n(conf)}"
+    if is_low_confidence(result):
+        why += (f". Вывод предварительный: точность распознавания низкая"
+                f"{', запись с помехами' if result.get('signal_quality') == 'warning' else ''}"
+                " - машина направляется на повторную дефектовку")
+    return urgency, why
+
+
+def recheck_operation(result: dict) -> str:
+    """Обязательная первая работа при низкой точности ML (механик её не убирает)."""
+    return "Повторная запись звука на посту и повторная проверка: вывод ML предварительный (низкая точность распознавания)"

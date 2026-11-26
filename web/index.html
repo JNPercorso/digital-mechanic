@@ -293,7 +293,7 @@ html,body{overflow:hidden;overscroll-behavior:none;max-width:100%}.pane,.chat,#p
 .vc-hist .hist{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;min-width:0}.vc-hist .hist::-webkit-scrollbar{display:none}.vc-hist .hist span.h{flex:none}
 .vcard.min{padding:7px 12px;box-shadow:0 8px 18px -6px rgba(0,0,0,.18)}.vcard.min .vc-pic{flex-basis:58px}.vcard.min .vc-kpi,.vcard.min .vc-hl,.vcard.min .hist .hd{display:none}
 .vcard.min .vc-plate{font-size:16px}.vcard.min .vc-sub{font-size:11px}.vcard.min .vc-hist{margin-top:5px}.vcard.min .hist span.h{padding:0;background:none}.vcard.min .hist .pill{font-size:10px;padding:1px 7px}
-.msg.md{white-space:normal}.md p{margin:0 0 6px}.md h4{margin:10px 0 4px}.md h4:first-child{margin-top:0}.md ul,.md ol,.ticket ul.tl{margin:2px 0 6px;padding-left:20px}.md li,.ticket li{margin:2px 0}.note .md p:last-child{margin:0}
+.modal{z-index:40}.pill.s-low{background:var(--chip);color:var(--text-2)}.page mark{background:#ffd28a;color:inherit;border-radius:3px;padding:0 2px}html[data-scheme=dark] .page mark{background:#7a4a10}@keyframes flash{0%{box-shadow:0 0 0 3px #f08c2e}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out}.msg.md{white-space:normal}.md p{margin:0 0 6px}.md h4{margin:10px 0 4px}.md h4:first-child{margin-top:0}.md ul,.md ol,.ticket ul.tl{margin:2px 0 6px;padding-left:20px}.md li,.ticket li{margin:2px 0}.note .md p:last-child{margin:0}
 </style>
 </head>
 <body class="d-web v-list">
@@ -429,7 +429,7 @@ function renderMain(){
  ${trendHTML(v)}
  
  ${tkCard}
- <div class="actions"><button class="btnp" id="bDiag" ${busy?'disabled':''}><i class="ti ti-stethoscope"></i> Получить результат диагностики</button></div>
+ <div class="actions"><button class="btnp" id="bDiag" ${busy?'disabled':''}>${diagDone[v.id]?'<i class="ti ti-eye"></i> Показать результат снова':'<i class="ti ti-stethoscope"></i> Получить результат диагностики'}</button></div>
  <div class="chat" id="chat"></div>
  <div class="composer"><input id="ask" placeholder="Вопрос по руководству ${v.engine}"><button class="mic" id="bMic" title="Сказать голосом" aria-label="Голосовой ввод">${MIC}</button><button class="btnp" id="bAsk" ${busy?'disabled':''} aria-label="Спросить"><span class="ask-txt">Спросить</span><span class="ask-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;transform:translate(0,0.5px)"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg></span></button></div>`;
  $('chat').innerHTML=chatLog[v.id]||'<div class="empty" style="padding:20px"><i class="ti ti-message-2"></i>Нажмите «Получить результат диагностики» или задайте вопрос</div>';
@@ -438,32 +438,34 @@ function renderMain(){
 }
 function renderTicketPane(){const p=$('paneTicket');p.innerHTML='<div id="tkSlot"></div>';$('tkSlot').innerHTML=draft&&sel&&draft.vid===sel.id?ticketHTML(draft):'<div class="card"><div class="chead">Заявка на дефектовку</div><div class="mut">Черновик заявки появится после диагностики по последней проверке, если в руководстве есть подходящая процедура.</div></div>'+((tickets[sel?.id]||[]).map(t=>`<div class="note n-ok" style="margin-top:8px"><i class="ti ti-check"></i>${t.no} · ${t.time}</div>`).join(''));bindTicket();}
 const TICON='<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>';
-const srcHTML=r=>`<span class="src" data-doc="${r.doc_id||''}" data-page="${r.page}"><i class="ti ti-file-text"></i>${esc(r.manual)}, стр. PDF ${r.page}</span>`;
+const srcHTML=(r,q)=>`<span class="src" data-doc="${r.doc_id||''}" data-page="${r.page}" data-q="${q||''}"><i class="ti ti-file-text"></i>${esc(r.manual)}, стр. PDF ${r.page}</span>`;
 const listHTML=a=>a&&a.length?'<ul class="tl">'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<div>-</div>';
 const note=(k,t,ic)=>`<div class="note n-${k}"><i class="ti ti-${ic||(k==='bad'?'alert-triangle':k==='ok'?'check':'info-circle')}"></i><div>${esc(t)}</div></div>`;
-function ticketHTML(d){if(d.sent)return note('ok','Заявка '+d.no+' создана в ТОиР');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-ok'}[d.prio];
+function ticketHTML(d){if(d.sent)return note('ok','Заявка '+d.no+' создана в ТОиР');const pc={'Высокий':'s-fail','Средний':'s-dev','Низкий':'s-low'}[d.prio];const lowN=d.low?note('warn','Вывод предварительный: точность распознавания низкая. Машина направляется на повторную дефектовку, эту работу убрать нельзя.','alert-triangle'):'';const ed=d.low?d.works.slice(1):d.works;
  const head=t=>`<div class="chead"><span>${TICON}${t}</span></div>`;
  const fault=`<div class="lbl">Неисправность</div><div>${d.code} · ${esc(FAULTS[d.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(d.conclusion)}</div>`;
- const srcs=`<div class="lbl">Источники${d.editing?' (меняются только через агента)':''}</div><div>${d.srcs.map(srcHTML).join('')}</div>`;
- if(d.editing)return `<div class="ticket card">${head('Изменение черновика')}${fault}<div class="lbl">Приоритет</div><select id="ePrio">${['Высокий','Средний','Низкий'].map(x=>`<option ${x===d.prio?'selected':''}>${x}</option>`).join('')}</select><div class="lbl">Работы (по одной в строке)</div><textarea id="eWorks" rows="5">${esc(d.works.join('\n'))}</textarea><div class="lbl">Запчасти (по одной в строке)</div><textarea id="eParts" rows="3">${esc(d.parts.join('\n'))}</textarea>${srcs}<div class="row"><button class="btnp" data-tk="save">Сохранить</button><button class="btn" data-tk="noedit">Не сохранять</button></div></div>`;
- return `<div class="ticket card">${head('Черновик заявки')}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send"><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
+ const srcs=`<div class="lbl">Источники${d.editing?' (меняются только через агента)':''}</div><div>${d.srcs.map(r=>srcHTML(r,esc(d.works.join('. ')))).join('')}</div>`;
+ if(d.editing)return `<div class="ticket card">${head('Изменение черновика')}${fault}<div class="lbl">Приоритет</div><select id="ePrio">${['Высокий','Средний','Низкий'].map(x=>`<option ${x===d.prio?'selected':''}>${x}</option>`).join('')}</select><div class="lbl">Работы (по одной в строке)</div>${d.low?`<div class="mut" style="margin:4px 0"><i class="ti ti-lock"></i> ${esc(d.works[0])}</div>`:''}<textarea id="eWorks" rows="5">${esc(ed.join('\n'))}</textarea><div class="lbl">Запчасти (по одной в строке)</div><textarea id="eParts" rows="3">${esc(d.parts.join('\n'))}</textarea>${srcs}<div class="row"><button class="btnp" data-tk="save">Сохранить</button><button class="btn" data-tk="noedit">Не сохранять</button></div></div>`;
+ return `<div class="ticket card">${head('Черновик заявки')}${lowN}${fault}<div class="lbl">Приоритет</div><div><span class="pill ${pc}">${d.prio}</span>${d.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(d.why)}</div><div class="lbl">Работы</div>${listHTML(d.works)}<div class="lbl">Запчасти</div>${listHTML(d.parts)}${srcs}${d.err?note('bad',d.err):''}<div class="row"><button class="btnp" data-tk="send"><i class="ti ti-send"></i> ${d.err?'Отправить повторно':'Отправить в ТОиР'}</button></div><div class="row"><button class="btn" data-tk="edit">Изменить</button></div></div>`;}
 function fillDraft(){const all=document.querySelectorAll('#chat .chat-ticket');all.forEach((el,i)=>{el.innerHTML=(i===all.length-1&&draft&&sel&&draft.vid===sel.id)?ticketHTML(draft):'';});bindTicket();}
 function refreshDraft(){renderMain();}
 function openTicket(vid,no){const t=(tickets[vid]||[]).find(x=>x.no===no);if(!t)return;const v=V.find(x=>x.id===vid);const m=document.createElement('div');m.className='modal';
- m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-ok">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(srcHTML).join('')}</div></div>`;
+ m.innerHTML=`<div class="card ticket"><div class="chead"><span>${TICON}${esc(t.no)}</span><button class="rbtn" aria-label="Закрыть">×</button></div><div class="mut">${esc(v.model)} · ${v.plate} · ${v.engine}</div><div class="lbl">Статус</div><div><span class="pill s-ok">${t.st}</span></div><div class="lbl">Создана</div><div>${t.date} ${t.time} · по проверке ${t.session}</div><div class="lbl">Неисправность</div><div>${t.code} · ${esc(FAULTS[t.code]||'')}</div><div class="lbl">Заключение</div><div>${esc(t.conclusion)}</div><div class="lbl">Приоритет</div><div>${t.prio}${t.edited?' <span class="pill pill-edit">изменено механиком</span>':''}</div><div class="mut">Почему: ${esc(t.why)}</div><div class="lbl">Работы</div>${listHTML(t.works)}<div class="lbl">Запчасти</div>${listHTML(t.parts)}<div class="lbl">Источники</div><div>${t.srcs.map(r=>srcHTML(r,esc(t.works.join('. ')))).join('')}</div></div>`;
  m.onclick=e=>{if(e.target===m||e.target.closest('.rbtn'))m.remove();};$('frame').appendChild(m);logEv('ui','просмотр заявки '+t.no);}
 // Окно страницы руководства: текст страницы из индекса (номер = страница PDF), листание, картинка страницы с рисунками
-function openPage(doc,page){const m=document.createElement('div');m.className='modal pv';let cur=page,img=false;
- const render=async()=>{let pg;try{const r=await fetch(`api/manuals/${doc}/${cur}`);if(!r.ok)throw 0;pg=await r.json();}catch(e){m.innerHTML=`<div class="card"><div class="chead"><span>Руководство</span><button class="rbtn" data-x>×</button></div>${note('bad','Не удалось загрузить страницу')}</div>`;return;}
-  const paras=pg.text.split('\n').filter(x=>x.trim());
-  m.innerHTML=`<div class="card"><div class="chead"><span>${esc(pg.manual)}</span><button class="rbtn" data-x aria-label="Закрыть">×</button></div><div class="mut">Страница PDF ${cur} из ${pg.pages} · <a href="#" data-img>${img?'показать текст':'показать страницу целиком (рисунки, таблицы)'}</a></div><div class="page">${img?`<img src="api/manuals/${doc}/${cur}/image" alt="Страница PDF ${cur}" style="width:100%;border-radius:8px;background:#fff">`:paras.map(x=>`<p>${esc(x)}</p>`).join('')}</div><div class="pnav"><button class="btn" data-p="-1" ${cur<=1?'disabled':''}>← стр. ${cur-1}</button><span class="mut">${cur}</span><button class="btn" data-p="1" ${cur>=pg.pages?'disabled':''}>стр. ${cur+1} →</button></div></div>`;};
+// Окно страницы руководства: абзацы страницы PDF, подсветка фрагмента, на который сослался агент, листание, картинка страницы
+function openPage(doc,page,q){const m=document.createElement('div');m.className='modal pv';let cur=page,img=false;
+ const render=async()=>{let pg;try{const r=await fetch(`api/manuals/${doc}/${cur}`+(cur===page&&q?'?q='+encodeURIComponent(q):''));if(!r.ok)throw 0;pg=await r.json();}catch(e){m.innerHTML=`<div class="card"><div class="chead"><span>Руководство</span><button class="rbtn" data-x>×</button></div>${note('bad','Не удалось загрузить страницу')}</div>`;return;}
+  const body=pg.paras.map(p=>`<p>${p.map(x=>x.h?`<mark>${esc(x.t)}</mark>`:esc(x.t)).join(' ')}</p>`).join('');
+  m.innerHTML=`<div class="card"><div class="chead"><span>${esc(pg.manual)}</span><button class="rbtn" data-x aria-label="Закрыть">×</button></div><div class="mut">Страница PDF ${cur} из ${pg.pages} · <a href="#" data-img>${img?'показать текст':'показать страницу целиком (рисунки, таблицы)'}</a></div><div class="page">${img?`<img src="api/manuals/${doc}/${cur}/image" alt="Страница PDF ${cur}" style="width:100%;border-radius:8px;background:#fff">`:body}</div><div class="pnav"><button class="btn" data-p="-1" ${cur<=1?'disabled':''}>← стр. ${cur-1}</button><span class="mut">${cur}</span><button class="btn" data-p="1" ${cur>=pg.pages?'disabled':''}>стр. ${cur+1} →</button></div></div>`;
+  const mk=m.querySelector('mark');if(mk)mk.scrollIntoView({block:'center'});};
  $('frame').appendChild(m);render();
  m.onclick=e=>{if(e.target===m||e.target.closest('[data-x]')){m.remove();return;}if(e.target.closest('[data-img]')){e.preventDefault();img=!img;render();return;}const b=e.target.closest('[data-p]');if(b&&!b.disabled){cur=Math.max(1,cur+ +b.dataset.p);render();logEv('ui',`листаем: ${doc}, стр. ${cur}`);}};
  logEv('ui',`открыта страница: ${doc}, стр. ${page}`);}
-document.addEventListener('click',e=>{const s=e.target.closest('.src[data-doc]');if(!s||!s.dataset.doc||e.target.closest('.pv'))return;openPage(s.dataset.doc,+s.dataset.page);});
+document.addEventListener('click',e=>{const s=e.target.closest('.src[data-doc]');if(!s||!s.dataset.doc||e.target.closest('.pv'))return;openPage(s.dataset.doc,+s.dataset.page,s.dataset.q||'');});
 // Ответ агента: простая разметка (заголовки, списки, жирный) и ссылки [[doc_id:страница]] -> кнопки страниц
 function md(text,refs){const lines=esc(text).split('\n');let h='',list=null;const flush=()=>{if(list){h+=`</${list}>`;list=null;}};
- for(let l of lines){l=l.replace(/\[\[([a-z0-9_]+):(\d+)\]\]/g,(m,d,p)=>{const r=(refs||[]).find(x=>x.doc_id===d&&x.page==p);return r?srcHTML(r):'';}).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+ for(let l of lines){const cl=l.replace(/\[\[[^\]]+\]\]/g,'').replace(/\*\*/g,'').trim();l=l.replace(/\[\[([a-z0-9_]+):(\d+)\]\]/g,(m,d,p)=>{const r=(refs||[]).find(x=>x.doc_id===d&&x.page==p);return r?srcHTML(r,cl):'';}).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
   const t=l.trim();let mm;if(!t){flush();continue;}
   if(mm=t.match(/^#{1,4}\s+(.*)/)){flush();h+=`<h4>${mm[1].replace(/<\/?b>/g,'')}</h4>`;continue;}
   if(/^<b>[^<]+<\/b>:?$/.test(t)){flush();h+=`<h4>${t.replace(/<\/?b>/g,'').replace(/:$/,'')}</h4>`;continue;}
@@ -490,33 +492,49 @@ function setStream(s){$('streamState').innerHTML=s==='busy'?'<i class="dot busy"
 function renderChecks(list){const all=[['Сбой записи: диагноз не ставится','ri'],['Поиск только по руководствам двигателя машины','eng'],['Ссылки: документ этого двигателя','doc'],['Ссылки: страница найдена поиском','page'],['Заявка только после подтверждения механика','confirm']];$('checks').innerHTML=all.map(([t,k])=>{const st=list.find(x=>x[0]===k);const ic=!st?'ti-point':st[1]?'ti-circle-check':'ti-circle-x';return `<div class="chk"><i class="ti ${ic}"></i>${t}${st&&st[2]?' <span style="color:var(--panel-muted)">('+st[2]+')</span>':''}</div>`}).join('');}
 function updSession(){$('sReq').textContent=S.req;$('sLlm').textContent=S.llm;$('sTools').textContent=S.tools;$('sTok').textContent=S.tin.toLocaleString('ru-RU')+' / '+S.tout.toLocaleString('ru-RU');$('sAvg').textContent=fmt(S.req?cost(S.tin,S.tout)/S.req:0)+' ₽';$('sTk').textContent=S.tk;}
 
-// ===== Запрос к агенту: события приходят потоком (SSE) - шаги, вызовы модели, ответ, черновик заявки
-async function runAgent(url,body,kind,userText){if(busy||!sel)return;const v=sel;startReq(kind);addChat(`<div class="msg me">${esc(userText)}</div>`,v.id);
- let stepId=null,result=null,pendingTk=false;const chk=[];
- const stepDone=()=>{if(stepId){chatLog[v.id]=chatLog[v.id].replace(`<i class="ti ti-loader-2 spin"></i><span data-s="${stepId}">`,`<i class="ti ti-check"></i><span data-s="${stepId}">`);stepId=null;addChat('',v.id);}};
- const handle=e=>{switch(e.type){
-  case 'step':stepDone();stepId='s'+Math.random().toString(36).slice(2);addChat(`<div class="step"><i class="ti ti-loader-2 spin"></i><span data-s="${stepId}">${esc(e.text)}</span></div>`,v.id);logEv('step',esc(e.text));addStep(e.tool||'tool','tool',0,0,0);if(e.tool==='search_manual'&&!chk.find(c=>c[0]==='eng'))chk.push(['eng',true,v.engine]);setStream('busy');break;
-  case 'llm':addStep(e.name,'LLM',e.tin,e.tout,e.ms);logEv('llm',`${esc(e.name)}: ${e.tin} / ${e.tout} ток.`);break;
-  case 'check_result':result=e.result;if(result.status==='check_failed')chk.push(['ri',true,'модель не вызывалась']);stepDone();break;
-  case 'warning':stepDone();addChat(note('warn',e.text,'alert-triangle'),v.id);logEv('warning',esc(e.text));break;
-  case 'answer':{stepDone();const id='m'+Math.random().toString(36).slice(2);SAY[id]=plain(e.text);
-   if(result&&result.status==='check_failed')addChat(`<div class="note n-bad" style="position:relative;padding-right:46px"><i class="ti ti-microphone-off"></i><div class="md">${md(e.text,[])}</div><button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить">${VOL}</button></div><button class="btn" data-retry><i class="ti ti-refresh"></i> Повторить проверку</button>`,v.id);
-   else addChat(`<div class="msg md" id="${id}">${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
-   if(e.searched){chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
-   if(pendingTk){addChat('<div class="chat-ticket"></div>',v.id);pendingTk=false;}
-   logEv('answer','ответ агента');break;}
-  case 'ticket_draft':draft={vid:v.id,dbid:e.id,code:e.payload.anomaly_type,conclusion:e.payload.conclusion,prio:PRIO[e.payload.urgency],why:e.extra.why,works:e.payload.operations,parts:e.payload.spare_parts,srcs:e.extra.refs,edited:false};
-   pendingTk=true;chk.push(['confirm',null,'ждёт механика']);logEv('ticket_draft','черновик заявки готов');break;
-  case 'error':stepDone();addChat(note('bad',e.text),v.id);logEv('error',esc(e.text));break;}};
- try{const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):null});
+// ===== Диалог по машине. Хранится на сервере отдельно для каждого браузера (X-Client-Id),
+// после перезагрузки страницы восстанавливается: вопросы, шаги агента, ответы, черновик заявки.
+let diagDone={};
+function cid(){let c=store.get('dm_client','');if(!c){c=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);store.set('dm_client',c);}return c;}
+const HDR=x=>Object.assign({'X-Client-Id':cid()},x||{});
+const rnd=()=>Math.random().toString(36).slice(2);
+// Одно событие диалога -> разметка чата. live: событие пришло сейчас (шаги крутятся, техпанель считает); иначе - восстановление
+function renderEv(e,v,ctx,live){switch(e.type){
+ case 'user':addChat(`<div class="msg me">${esc(e.text)}</div>`,v.id);ctx.diag=e.kind==='diagnose';break;
+ case 'step':ctx.done();if(live){ctx.stepId='s'+rnd();addChat(`<div class="step"><i class="ti ti-loader-2 spin"></i><span data-s="${ctx.stepId}">${esc(e.text)}</span></div>`,v.id);logEv('step',esc(e.text));addStep(e.tool||'tool','tool',0,0,0);if(e.tool==='search_manual'&&!ctx.chk.find(c=>c[0]==='eng'))ctx.chk.push(['eng',true,v.engine]);setStream('busy');}
+  else addChat(`<div class="step"><i class="ti ti-check"></i><span>${esc(e.text)}</span></div>`,v.id);break;
+ case 'llm':if(live){addStep(e.name,'LLM',e.tin,e.tout,e.ms);logEv('llm',`${esc(e.name)}: ${e.tin} / ${e.tout} ток.`);}break;
+ case 'check_result':ctx.done();ctx.result=e.result;if(ctx.diag){const last=v.sessions[v.sessions.length-1];if(e.result.session_id===last.session_id)diagDone[v.id]=true;}
+  if(e.result.status==='check_failed')ctx.chk.push(['ri',true,'модель не вызывалась']);break;
+ case 'warning':ctx.done();addChat(note('warn',e.text,'alert-triangle'),v.id);if(live)logEv('warning',esc(e.text));break;
+ case 'answer':{ctx.done();const id='m'+rnd();SAY[id]=plain(e.text);const dg=ctx.diag?' data-diag="1"':'';
+  if(ctx.result&&ctx.result.status==='check_failed'&&ctx.diag)addChat(`<div class="note n-bad"${dg} style="position:relative;padding-right:46px"><i class="ti ti-microphone-off"></i><div class="md">${md(e.text,[])}</div><button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить">${VOL}</button></div><button class="btn" data-retry><i class="ti ti-refresh"></i> Повторить проверку</button>`,v.id);
+  else addChat(`<div class="msg md" id="${id}"${dg}>${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
+  if(e.searched){ctx.chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);ctx.chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
+  if(ctx.pendingTk){addChat('<div class="chat-ticket"></div>',v.id);ctx.pendingTk=false;}
+  ctx.diag=false;if(live)logEv('answer','ответ агента');break;}
+ case 'ticket_draft':if(live||e.status!=='sent'){const p=e.payload,x=e.extra||{};draft={vid:v.id,dbid:e.id,code:p.anomaly_type,conclusion:p.conclusion,prio:PRIO[p.urgency],why:x.why,works:p.operations,parts:p.spare_parts,srcs:x.refs,edited:!!x.edited_by_mechanic,low:!!x.low_confidence,err:e.status==='error'?'ТОиР не принял заявку, отправьте повторно':''};}
+  ctx.pendingTk=true;ctx.chk.push(['confirm',null,'ждёт механика']);if(live)logEv('ticket_draft','черновик заявки готов');break;
+ case 'ticket_sent':addChat(note('ok',`Заявка ${e.ticket_id} создана в ТОиР`),v.id);break;
+ case 'error':ctx.done();addChat(note('bad',e.text),v.id);if(live)logEv('error',esc(e.text));break;}}
+function newCtx(v,live){const ctx={stepId:null,result:null,pendingTk:false,diag:false,chk:[]};
+ ctx.done=()=>{if(live&&ctx.stepId){chatLog[v.id]=chatLog[v.id].replace(`<i class="ti ti-loader-2 spin"></i><span data-s="${ctx.stepId}">`,`<i class="ti ti-check"></i><span data-s="${ctx.stepId}">`);ctx.stepId=null;addChat('',v.id);}};return ctx;}
+async function loadChat(v){if(chatLog[v.id]!==undefined)return;let items=[];try{const r=await fetch('api/chat/'+encodeURIComponent(v.id),{headers:HDR()});if(r.ok)items=await r.json();}catch(e){}
+ if(chatLog[v.id]!==undefined)return;chatLog[v.id]='';const ctx=newCtx(v,false);items.forEach(e=>renderEv(e,v,ctx,false));if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);}
+// ===== Запрос к агенту: события приходят потоком (SSE)
+async function runAgent(url,body,kind,userText,isDiag){if(busy||!sel)return;const v=sel;startReq(kind);const ctx=newCtx(v,true);
+ renderEv({type:'user',text:userText,kind:isDiag?'diagnose':''},v,ctx,true);
+ try{const res=await fetch(url,{method:'POST',headers:HDR({'Content-Type':'application/json'}),body:body?JSON.stringify(body):null});
   if(!res.ok){let t='Ошибка сервера '+res.status;try{t=(await res.json()).detail||t;}catch(x){}addChat(note('bad',t),v.id);}
   else{const rd=res.body.getReader(),dec=new TextDecoder();let buf='';
    for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
-    while((i=buf.indexOf('\n\n'))>=0){const ch=buf.slice(0,i);buf=buf.slice(i+2);if(!ch.startsWith('data: '))continue;let e;try{e=JSON.parse(ch.slice(6));}catch(x){continue;}handle(e);}}}
+    while((i=buf.indexOf('\n\n'))>=0){const ch=buf.slice(0,i);buf=buf.slice(i+2);if(!ch.startsWith('data: '))continue;let e;try{e=JSON.parse(ch.slice(6));}catch(x){continue;}renderEv(e,v,ctx,true);}}}
  }catch(x){addChat(note('bad','Нет связи с сервером. Проверьте интернет и повторите.'),v.id);}
- stepDone();if(pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(chk);endReq();renderTicketPane();}
+ ctx.done();if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(ctx.chk);endReq();renderTicketPane();}
 document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))return;addChat(note('warn','Повторите запись на посту (прогретый двигатель, холостой ход), затем снова нажмите «Получить результат диагностики».','refresh'));logEv('ui','повторная проверка запрошена');});
-function runDiag(v){runAgent('api/diagnose/'+encodeURIComponent(v.id),null,'диагностика','Получить результат диагностики');}
+// Результат по последней проверке уже получен - повторно не запрашиваем, а показываем его в чате
+function runDiag(v){if(diagDone[v.id]){const all=document.querySelectorAll('#chat [data-diag]');const el=all[all.length-1];if(el){el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}return;}
+ runAgent('api/diagnose/'+encodeURIComponent(v.id),null,'диагностика','Получить результат диагностики',true);}
 function runAsk(v){const a=$('ask');const q=a?a.value.trim():'';if(!q||busy)return;a.value='';runAgent('api/ask',{vehicle_id:v.id,text:q},'вопрос',q);}
 async function ticketAct(a,btn){const box=btn?btn.closest('.ticket'):document;const q=s=>box.querySelector(s);if(!draft)return;
  if(a==='edit'){draft.editing=true;refreshDraft();logEv('ui','редактирование черновика');return;}
@@ -526,7 +544,7 @@ async function ticketAct(a,btn){const box=btn?btn.closest('.ticket'):document;co
   const r=await fetch('api/tickets/'+draft.dbid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('Не удалось сохранить черновик');return;}
   const t=await r.json();Object.assign(draft,{prio:PRIO[t.payload.urgency],works:t.payload.operations,parts:t.payload.spare_parts,editing:false,edited:true});logEv('ui','черновик изменён механиком');refreshDraft();return;}
  if(a==='send'){if(btn)btn.disabled=true;const vid=draft.vid;logEv('toir','POST /tickets');
-  const r=await fetch('api/tickets/'+draft.dbid+'/send',{method:'POST'});
+  const r=await fetch('api/tickets/'+draft.dbid+'/send',{method:'POST',headers:HDR()});
   if(!r.ok){let t='ТОиР не принял заявку';try{t=(await r.json()).detail||t;}catch(x){}draft.err=t;logEv('toir','ошибка: '+esc(t));refreshDraft();return;}
   const t=await r.json();S.tk++;S.tools++;draft=null;await loadTickets(vid);addChat(note('ok',`Заявка ${t.toir_ticket_id} создана в ТОиР`),vid);
   renderChecks([['confirm',true,'отправлено по кнопке механика']]);logEv('toir','создана '+t.toir_ticket_id);updSession();renderMain();}}
@@ -537,7 +555,7 @@ $('q').oninput=()=>{$('searchBox').classList.toggle('has',!!$('q').value);render
 $('qClr').onclick=()=>{$('q').value='';$('searchBox').classList.remove('has');renderList();$('q').focus();};
 $('gear').onclick=togglePanel;
 $('nList').onclick=()=>setView('list');$('nVeh').onclick=()=>{if(sel)setView('vehicle');};
-$('vehList').onclick=e=>{const r=e.target.closest('.veh');if(!r)return;sel=V.find(v=>v.id==r.dataset.id);trendOpen=false;if(draft&&draft.vid!==sel.id)draft=null;setView('vehicle');renderList();renderMain();loadTickets(sel.id).then(()=>{if(sel&&sel.id===r.dataset.id)renderMain();});logEv('ui','выбрана '+sel.model+' '+sel.plate);};
+$('vehList').onclick=e=>{const r=e.target.closest('.veh');if(!r)return;sel=V.find(v=>v.id==r.dataset.id);trendOpen=false;if(draft&&draft.vid!==sel.id)draft=null;setView('vehicle');renderList();renderMain();Promise.all([loadTickets(sel.id),loadChat(sel)]).then(()=>{if(sel&&sel.id===r.dataset.id)renderMain();});logEv('ui','выбрана '+sel.model+' '+sel.plate);};
 setInterval(async()=>{if(!panelOn)return;try{const s=(await (await fetch('api/status')).json()).queue;$('queueLen').textContent=s.waiting;const t=s.token_ttl_s;$('tokTtl').textContent=t?Math.floor(t/60)+':'+String(t%60).padStart(2,'0'):'ещё не получен';}catch(e){}},3000);
 
 const MIC='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
