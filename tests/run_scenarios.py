@@ -117,6 +117,7 @@ def main() -> None:
                 except Exception as ex:  # сценарий не должен останавливать прогон
                     evs = [{"type": "error", "text": repr(ex)}]
                 s = summarize(kind, v, evs)
+                s["question"] = (body or {}).get("text", "")
                 s["problems"] = problems(s)
                 runs.append(s)
                 f.write(json.dumps({"scenario": kind, "vehicle": v["vehicle_id"], "events": evs,
