@@ -158,3 +158,8 @@ def test_parts_must_fit_ticket_works():
     ops = ["Осмотреть коромысла и штанги; при износе заменить втулки коромысел"]
     assert rules.part_fits_works("Втулка коромысла 236-1007118-В", ops)
     assert not rules.part_fits_works("Втулка толкателя 236-1007186", ops)
+
+
+def test_english_ml_terms_replaced():
+    t, n = rules.russify_terms("Проверка: anomaly, confidence 0.91, anomaly_score 0.85")
+    assert n == 3 and "anomaly" not in t and "точность распознавания" in t

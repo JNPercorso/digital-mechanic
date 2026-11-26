@@ -455,6 +455,9 @@ class Run:
                                     vehicle_id=self.v["vehicle_id"])
                     text, refs = ABOUT, []
                 text = rules.mark_hypotheses(rules.drop_empty_sections(text))
+                text, en = rules.russify_terms(text)
+                if en:
+                    store.log_event("russified_terms", {"count": en}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
                 if rules.trend_claim_wrong(text, self.v["sessions"]):  # «стало лучше/хуже» сверяем с данными
                     store.log_event("fixed_trend", {"text": text[:1000]}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])

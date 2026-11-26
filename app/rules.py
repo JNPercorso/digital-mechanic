@@ -531,3 +531,17 @@ def part_fits_works(part: str, ops: list[str]) -> bool:
     words = {w for w in _stems(re.sub(r"\d[\d.\-]*\S*", " ", part)) if len(w) >= 4}
     work = _stems(" ".join(ops))
     return not words or len(words & work) / len(words) >= 0.66  # «втулка толкателя» не подходит к работам по коромыслам
+
+
+# Служебные слова ML по-английски механику не показываем (требование заказчика): заменяем русскими
+_EN_TERMS = [(r"anomaly[_ ]score|score", "оценка отклонения"), (r"confidence", "точность распознавания"),
+             (r"signal[_ ]quality", "качество записи"), (r"check[_ ]failed", "сбой проверки"),
+             (r"anomaly", "отклонение"), (r"normal", "норма")]
+
+
+def russify_terms(text: str) -> tuple[str, int]:
+    n = 0
+    for pat, ru in _EN_TERMS:
+        text, k = re.subn(rf"\b{pat}\b", ru, text, flags=re.I)
+        n += k
+    return text, n
