@@ -47,6 +47,7 @@ button{font:inherit;cursor:pointer;color:inherit}
 .topbar .sp{flex:1}
 .app{flex:1;display:flex;min-height:0;gap:14px;padding:0 14px 14px}
 .pane{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.d-phone:not(.has-sel) .app{padding-bottom:12px!important}
 .d-phone .app{padding:0 12px 84px}
 .d-phone #paneList,.d-phone #paneMain{flex:1}
 .d-phone #paneTicket{display:none}
@@ -110,6 +111,10 @@ button{font:inherit;cursor:pointer;color:inherit}
 .src{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text);background:var(--surface);border-radius:999px;padding:3px 10px;margin:6px 4px 0 0}
 .note{border-radius:16px;padding:10px 12px;font-size:13px;display:flex;gap:8px;align-items:flex-start}
 .n-warn{background:var(--n-warn-bg);color:var(--n-warn)}.n-bad{background:var(--n-bad-bg);color:var(--n-bad)}.n-ok{background:var(--n-ok-bg);color:var(--n-ok)}
+.cbar{--vbg:var(--bg);position:sticky;bottom:0;z-index:4;margin-top:auto;padding-top:16px;background:linear-gradient(to bottom,transparent,var(--vbg) 16px)}html[data-style=neon] .cbar{--vbg:#ffe1f0}html[data-style=neon][data-scheme=dark] .cbar{--vbg:#14062e}.cbar .composer{background:linear-gradient(var(--glass),var(--glass)),var(--vbg)}
+.pins{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}.pins:empty{display:none}
+.pin{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--glass-b);background:linear-gradient(var(--glass),var(--glass)),var(--vbg);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.pin b{font-weight:600}
 .composer{display:flex;gap:8px;align-items:center;background:var(--glass);border:1px solid var(--glass-b);border-radius:999px;padding:6px 6px 6px 16px}
 .composer input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:inherit;color:var(--text)}
 .composer .btnp{padding:8px 14px}
@@ -442,12 +447,12 @@ function renderMain(){
  ${trendHTML(v)}
  
  ${tkCard}
- <div class="actions"><button class="btnp" id="bDiag" ${busy?'disabled':''}>${diagDone[v.id]?'<i class="ti ti-eye"></i> Показать результат снова':'<i class="ti ti-stethoscope"></i> Получить результат диагностики'}</button></div>
+ <div class="actions"><button class="btnp" id="bDiag" ${busy?'disabled':''}>${diagDone[v.id]?'<i class="ti ti-eye"></i> Показать снова результат диагностики':'<i class="ti ti-stethoscope"></i> Получить результат диагностики'}</button></div>
  <div class="chat" id="chat"></div>
- <div class="composer"><input id="ask" placeholder="Вопрос по руководству ${v.engine}"><button class="mic" id="bMic" title="Сказать голосом" aria-label="Голосовой ввод">${MIC}</button><button class="btnp" id="bAsk" ${busy?'disabled':''} aria-label="Спросить"><span class="ask-txt">Спросить</span><span class="ask-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;transform:translate(0,0.5px)"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg></span></button></div>`;
+ <div class="cbar"><div class="pins" id="pins"></div><div class="composer"><input id="ask" placeholder="Спросите о машине или ремонте"><button class="mic" id="bMic" title="Сказать голосом" aria-label="Голосовой ввод">${MIC}</button><button class="btnp" id="bAsk" ${busy?'disabled':''} aria-label="Спросить"><span class="ask-txt">Спросить</span><span class="ask-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;transform:translate(0,0.5px)"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg></span></button></div></div>`;
  $('chat').innerHTML=chatLog[v.id]||'<div class="empty" style="padding:20px"><i class="ti ti-message-2"></i>Нажмите «Получить результат диагностики» или задайте вопрос</div>';
  fillDraft();$('bDiag').onclick=()=>runDiag(v);$('bMic').onclick=()=>micClick(v);$('bAsk').onclick=()=>runAsk(v);$('ask').onkeydown=e=>{if(e.key==='Enter')runAsk(v)};
- renderTicketPane();
+ renderTicketPane();setTimeout(updPins,60);
 }
 function renderTicketPane(){const p=$('paneTicket');p.innerHTML='<div id="tkSlot"></div>';$('tkSlot').innerHTML=draft&&sel&&draft.vid===sel.id?ticketHTML(draft):'<div class="card"><div class="chead">Заявка на дефектовку</div><div class="mut">Черновик заявки появится после диагностики по последней проверке, если в руководстве есть подходящая процедура.</div></div>'+((tickets[sel?.id]||[]).map(t=>`<div class="note n-ok" style="margin-top:8px"><i class="ti ti-check"></i>${t.no} · ${t.time}</div>`).join(''));bindTicket();}
 const TICON='<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 11h6M9 15h4"/></svg>';
@@ -515,7 +520,7 @@ const plain=t=>t.replace(/\[\[[^\]]+\]\]/g,'').replace(/\*\*/g,'').replace(/^#+\
 document.addEventListener('scroll',e=>{const el=e.target;if(!el||!el.classList)return;el.classList.add('scrolling');clearTimeout(el._st);el._st=setTimeout(()=>el.classList.remove('scrolling'),900);},true);
 function bindTicket(){spkIcons&&spkIcons();document.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>ticketAct(b.dataset.tk,b));}
 
-function addChat(html,vid){vid=vid||sel.id;chatLog[vid]=(chatLog[vid]||'')+html;if(sel&&sel.id===vid){const c=$('chat');if(c){c.innerHTML=chatLog[vid];c.scrollTop=1e9;$('paneMain').scrollTop=1e9;}fillDraft();}}
+function addChat(html,vid){vid=vid||sel.id;chatLog[vid]=(chatLog[vid]||'')+html;if(sel&&sel.id===vid){const c=$('chat');if(c){c.innerHTML=chatLog[vid];c.scrollTop=1e9;$('paneMain').scrollTop=1e9;}fillDraft();setTimeout(updPins,60);}}
 function logEv(t,s){const d=document.createElement('div');d.innerHTML=`<span class="ev">${new Date().toLocaleTimeString('ru-RU')} ${t}</span> ${s}`;$('log').prepend(d);}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 
@@ -536,7 +541,7 @@ function updSession(){$('sReq').textContent=S.req;$('sLlm').textContent=S.llm;$(
 let diagDone={};
 const HDR=x=>x||{};
 const rnd=()=>Math.random().toString(36).slice(2);
-const CHAT_T=['user','step','warning','check_result','answer','ticket_draft','ticket_sent','error','no_ticket'];
+const CHAT_T=['user','step','warning','check_result','answer','ticket_draft','ticket_sent','error','no_ticket','diag_start'];
 const lastSid=v=>{const s=v&&v.sessions&&v.sessions[v.sessions.length-1];return s?s.session_id:'';};
 function chatGet(v){try{const o=JSON.parse(localStorage.getItem('dm_chat_'+v.id)||'null');if(o&&o.sid===lastSid(v))return o.items||[];localStorage.removeItem('dm_chat_'+v.id);}catch(e){}return [];}
 function chatPut(v,e){if(!v||!CHAT_T.includes(e.type))return;const items=chatGet(v);items.push(e);try{localStorage.setItem('dm_chat_'+v.id,JSON.stringify({sid:lastSid(v),items}));}catch(x){}}
@@ -548,10 +553,10 @@ function renderEv(e,v,ctx,live){switch(e.type){
  case 'step':ctx.done();if(live){ctx.stepId='s'+rnd();addChat(`<div class="step"><i class="ti ti-loader-2 spin"></i><span data-s="${ctx.stepId}">${esc(e.text)}</span></div>`,v.id);logEv('step',esc(e.text));addStep(e.tool||'tool','tool',0,0,0);if(e.tool==='search_manual'&&!ctx.chk.find(c=>c[0]==='eng'))ctx.chk.push(['eng',true,v.engine]);setStream('busy');}
   else addChat(`<div class="step"><i class="ti ti-check"></i><span>${esc(e.text)}</span></div>`,v.id);break;
  case 'llm':if(live){addStep(e.name,'LLM',e.tin,e.tout,e.ms);logEv('llm',`${esc(e.name)}: ${e.tin} / ${e.tout} ток.`);}break;
- case 'check_result':ctx.done();ctx.result=e.result;if(ctx.diag){const last=v.sessions[v.sessions.length-1];if(e.result.session_id===last.session_id)diagDone[v.id]=true;}
+ case 'check_result':ctx.done();ctx.result=e.result;
   if(e.result.status==='check_failed')ctx.chk.push(['ri',true,'модель не вызывалась']);break;
  case 'warning':ctx.done();addChat(note('warn',e.text,'alert-triangle'),v.id);if(live)logEv('warning',esc(e.text));break;
- case 'answer':{ctx.done();const id='m'+rnd();SAY[id]=plain(e.text);const dg=ctx.diag?' data-diag="1"':'';
+ case 'answer':{ctx.done();ctx.got=true;if(ctx.diag&&ctx.result){const last=v.sessions[v.sessions.length-1];if(ctx.result.session_id===last.session_id)diagDone[v.id]=true;}const id='m'+rnd();SAY[id]=plain(e.text);const dg=ctx.diag?' data-diag="1"':'';
   if(ctx.result&&ctx.result.status==='check_failed'&&ctx.diag)addChat(`<div class="note n-bad"${dg} style="position:relative;padding-right:46px"><i class="ti ti-microphone-off"></i><div class="md">${md(e.text,[])}</div><button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить">${VOL}</button></div><button class="btn" data-retry><i class="ti ti-refresh"></i> Повторить проверку</button>`,v.id);
   else addChat(`<div class="msg md" id="${id}"${dg}>${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
   if(e.searched){ctx.chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);ctx.chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
@@ -560,29 +565,47 @@ function renderEv(e,v,ctx,live){switch(e.type){
  case 'ticket_draft':if(live||e.status!=='sent'){const p=e.payload,x=e.extra||{};draft={vid:v.id,dbid:e.id,code:p.anomaly_type,conclusion:p.conclusion,prio:PRIO[p.urgency],why:x.why,works:p.operations,parts:p.spare_parts,srcs:x.refs,conflicts:x.conflicts||[],edited:!!x.edited_by_mechanic,low:!!x.low_confidence,conf:x.confidence,sq:x.signal_quality,err:e.status==='error'?'ТОиР не принял заявку, отправьте повторно':''};}
   ctx.pendingTk=true;ctx.chk.push(['confirm',null,'ждёт механика']);if(live)logEv('ticket_draft','черновик заявки готов');break;
  case 'no_ticket':ctx.done();addChat(note('warn',e.text,'file-off'),v.id);if(live)logEv('rule','заявка не сформирована: нет инструкции');break;
+ case 'diag_start':ctx.done();ctx.diag=true;addChat(`<div class="step"><i class="ti ti-check"></i><span>Сначала диагностика по последней проверке</span></div>`,v.id);break;
+ case 'show':ctx.show=e.what;break;
  case 'ticket_sent':addChat(note('ok',`Заявка ${e.ticket_id} создана в ТОиР`),v.id);break;
- case 'error':ctx.done();addChat(note('bad',e.text),v.id);if(live)logEv('error',esc(e.text));break;}}
+ case 'error':ctx.done();ctx.err=true;addChat(note('bad',e.text),v.id);if(live)logEv('error',esc(e.text));break;}}
 function newCtx(v,live){const ctx={stepId:null,result:null,pendingTk:false,diag:false,chk:[]};
  ctx.done=()=>{if(live&&ctx.stepId){chatLog[v.id]=chatLog[v.id].replace(`<i class="ti ti-loader-2 spin"></i><span data-s="${ctx.stepId}">`,`<i class="ti ti-check"></i><span data-s="${ctx.stepId}">`);ctx.stepId=null;addChat('',v.id);}};return ctx;}
 async function loadChat(v){if(chatLog[v.id]!==undefined)return;const items=chatGet(v);
  for(const e of items)if(e.type==='ticket_draft'&&e.id){try{const r=await fetch('api/tickets/'+e.id);if(r.ok){const t=await r.json();Object.assign(e,{payload:t.payload,extra:t.extra,status:t.status});}}catch(x){}}
  if(chatLog[v.id]!==undefined)return;chatLog[v.id]='';const ctx=newCtx(v,false);items.forEach(e=>renderEv(e,v,ctx,false));if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);}
 // ===== Запрос к агенту: события приходят потоком (SSE)
-async function runAgent(url,body,kind,userText,isDiag){if(busy||!sel)return;const v=sel;startReq(kind);const ctx=newCtx(v,true);
+let lastReq=null;
+async function runAgent(url,body,kind,userText,isDiag){if(busy||!sel)return;const v=sel;lastReq=[url,body,kind,userText,isDiag];startReq(kind);const ctx=newCtx(v,true);
  const ue={type:'user',text:userText,kind:isDiag?'diagnose':''};renderEv(ue,v,ctx,true);chatPut(v,ue);
  try{const res=await fetch(url,{method:'POST',headers:HDR({'Content-Type':'application/json'}),body:body?JSON.stringify(body):null});
   if(!res.ok){let t='Ошибка сервера '+res.status;try{t=(await res.json()).detail||t;}catch(x){}addChat(note('bad',t),v.id);}
   else{const rd=res.body.getReader(),dec=new TextDecoder();let buf='';
    for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
     while((i=buf.indexOf('\n\n'))>=0){const ch=buf.slice(0,i);buf=buf.slice(i+2);if(!ch.startsWith('data: '))continue;let e;try{e=JSON.parse(ch.slice(6));}catch(x){continue;}renderEv(e,v,ctx,true);chatPut(v,e);}}}
- }catch(x){addChat(note('bad','Нет связи с сервером. Проверьте интернет и повторите.'),v.id);}
- ctx.done();if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(ctx.chk);endReq();renderTicketPane();}
+ }catch(x){ctx.broken=true;}
+ if(!ctx.got&&!ctx.err){addChat(note('bad','Связь с сервером прервалась, ответ не получен. Проверьте интернет и повторите запрос.')+'<button class="btn" data-again><i class="ti ti-refresh"></i> Повторить запрос</button>',v.id);logEv('error','ответ не получен');}
+ ctx.done();if(ctx.pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(ctx.chk);endReq();renderTicketPane();
+ if(ctx.show)setTimeout(()=>showEl(ctx.show==='ticket'?lastTkEl():lastDiagEl()),300);}
 document.addEventListener('change',e=>{if(!e.target.matches('[data-lowok]')||!draft)return;draft.lowOk=e.target.checked;logEv('ui',draft.lowOk?'механик подтвердил предварительный вывод':'подтверждение снято');refreshDraft();});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-again]');if(!b||busy||!lastReq||!sel)return;b.remove();runAgent(...lastReq);});
 document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))return;addChat(note('warn','Повторите запись на посту (прогретый двигатель, холостой ход), затем снова нажмите «Получить результат диагностики».','refresh'));logEv('ui','повторная проверка запрошена');});
 // Результат по последней проверке уже получен - повторно не запрашиваем, а показываем его в чате
-function runDiag(v){if(diagDone[v.id]){const all=document.querySelectorAll('#chat [data-diag]');const el=all[all.length-1];if(el){el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}return;}
+function showEl(el){if(!el)return;const pm=$('paneMain'),vc=$('vcard');const off=el.getBoundingClientRect().top-(vc?Math.max(vc.getBoundingClientRect().bottom,pm.getBoundingClientRect().top+(vc.classList.contains('min')?0:90)):pm.getBoundingClientRect().top)-8;pm.scrollBy({top:off,behavior:'smooth'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+const lastDiagEl=()=>{const a=document.querySelectorAll('#chat [data-diag]');return a[a.length-1]||null;};
+const lastTkEl=()=>{const a=[...document.querySelectorAll('#chat .chat-ticket')].filter(x=>x.innerHTML.trim());return a[a.length-1]||null;};
+// Плашки над строкой ввода: черновик заявки и результат диагностики, когда они ушли из вида
+function updPins(){const box=$('pins'),pane=$('paneMain');if(!box||!pane||!sel)return;const pr=pane.getBoundingClientRect(),vc=$('vcard'),cb=document.querySelector('.cbar');
+ const top=vc?vc.getBoundingClientRect().bottom:pr.top,bot=cb?cb.getBoundingClientRect().top:pr.bottom;
+ const hidden=el=>{if(!el)return false;const r=el.getBoundingClientRect();return r.bottom<top+20||r.top>bot-20;};
+ const tk=lastTkEl(),dg=lastDiagEl();let h='';
+ if(hidden(dg))h+=`<button class="pin" data-pin="diag"><i class="ti ti-stethoscope"></i>Результат диагностики</button>`;
+ if(hidden(tk)&&draft)h+=`<button class="pin" data-pin="tk"><i class="ti ti-clipboard-list"></i>Черновик заявки · <b>${draft.prio}</b></button>`;
+ if(box.innerHTML!==h)box.innerHTML=h;}
+document.addEventListener('click',e=>{const p=e.target.closest('[data-pin]');if(!p)return;showEl(p.dataset.pin==='tk'?lastTkEl():lastDiagEl());logEv('ui',p.dataset.pin==='tk'?'плашка: черновик заявки':'плашка: результат диагностики');});
+function runDiag(v){if(diagDone[v.id]){showEl(lastDiagEl());return;}
  runAgent('api/diagnose/'+encodeURIComponent(v.id),null,'диагностика','Получить результат диагностики',true);}
-function runAsk(v){const a=$('ask');const q=a?a.value.trim():'';if(!q||busy)return;a.value='';runAgent('api/ask',{vehicle_id:v.id,text:q,history:chatHist(v)},'вопрос',q);}
+function runAsk(v){const a=$('ask');const q=a?a.value.trim():'';if(!q||busy)return;a.value='';runAgent('api/ask',{vehicle_id:v.id,text:q,history:chatHist(v),diagnosed:!!diagDone[v.id]},'вопрос',q);}
 async function ticketAct(a,btn){const box=btn?btn.closest('.ticket'):document;const q=s=>box.querySelector(s);if(!draft)return;
  if(a==='edit'){draft.editing=true;refreshDraft();logEv('ui','редактирование черновика');return;}
  if(a==='noedit'){draft.editing=false;refreshDraft();return;}
@@ -731,7 +754,7 @@ async function boot(){try{const [vs,ft]=await Promise.all([fetch('api/vehicles')
   FAULTS=ft;V=vs.map(mapVeh);V.forEach(v=>{TR[v.id]=v.sessions.map(s=>[dtFmt(s.checked_at).slice(0,5),s.status==='check_failed'?null:s.anomaly_score]);ENG[v.engine]=1;});}
  catch(e){$('vehList').innerHTML='<div class="empty">Не удалось загрузить список машин. Обновите страницу.</div>';return;}
  renderChips();renderList();renderMain();}
-$('paneMain').addEventListener('scroll',()=>{const c=$('vcard');if(!c)return;const t=$('paneMain').scrollTop;if(t>60)c.classList.add('min');else if(t<8)c.classList.remove('min');},{passive:true});
+$('paneMain').addEventListener('scroll',()=>{const c=$('vcard');if(!c)return;const t=$('paneMain').scrollTop;if(t>60)c.classList.add('min');else if(t<8)c.classList.remove('min');updPins();},{passive:true});
 document.querySelector('.logo-slot').innerHTML=LOGO;renderChecks([]);updSession();setDev(autoDev());$('pClose').onclick=togglePanel;$('sheetBg').onclick=togglePanel;boot();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>

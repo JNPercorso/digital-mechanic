@@ -131,3 +131,10 @@ def test_ticket_operations_use_conservative_condition():
         ["Отрегулировать тепловые зазоры на холодном двигателе или не ранее чем через 15 минут после остановки.",
          "Проверить затяжку гаек стоек коромысел"], rules.CONFLICTS)
     assert ops[0] == "Отрегулировать тепловые зазоры на холодном двигателе." and len(changed) == 1
+
+
+def test_release_ban_only_with_manual_reference():
+    out, removed = rules.unsupported_lines("Выпускать на линию нельзя: нужна дефектовка.\nНельзя выпускать в рейс [[yamz236_re:17]]")
+    assert removed == ["Выпускать на линию нельзя: нужна дефектовка."]  # запрет без ссылки убран, со ссылкой остался
+    rec = rules.release_recommendation(ANOMALY)
+    assert "до выпуска в рейс" in rec and "решение о выпуске принимает механик" in rec

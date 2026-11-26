@@ -181,6 +181,7 @@ FAULTS = {
     "F14": ("high", [["цеп"], ["натяжител"], ["грм"]]),
 }
 LEVELS = ["low", "medium", "high"]
+PRIORITY_RU = {"low": "низкий", "medium": "средний", "high": "высокий"}
 RU_LEVEL = {"low": "низкая", "medium": "средняя", "high": "высокая"}
 URGENCY_MEANING = {
     "high": "дефектовка до выпуска в рейс",
@@ -260,8 +261,9 @@ def quote_on_page(quote: str, page_text: str) -> bool:
 
 _MODEL = re.compile(r"(ЯМЗ|ЗМЗ|МАЗ|КАМАЗ|ПАЗ|УАЗ|ГАЗ|Урал|ЗИЛ)\s*[-–]?\s*\d[\w.]*", re.I)
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
-_BAN = re.compile(r"эксплуатац[^.]{0,40}(не допуска|запрещ)|запрещ\w* эксплуатац|прекрат\w* эксплуатац|"
-                  r"не выпуска\w*|выпуск\w* в рейс запрещ|нельзя (выпуска|эксплуатир)", re.I)
+_BAN = re.compile(r"(эксплуатац|эксплуатир|выпуск|выезд|ездить|на лини|в рейс)[^.]{0,40}(нельзя|не допуска|запрещ|не следует)|"
+                  r"(нельзя|запрещ\w*|не допуска\w*|не следует)[^.]{0,30}(эксплуатац|эксплуатир|выпуска|выезжа|ездить|на лини|в рейс)|"
+                  r"прекрат\w* эксплуатац|не выпуска\w*", re.I)
 _NOT_NORM = re.compile(r"(стр\.?|страниц\w*|рисун\w*|рис\.|таблиц\w*|F\d\d|S-\d+|№\s?\d+)\s*\d*", re.I)
 
 
@@ -467,3 +469,16 @@ def drop_empty_sections(text: str) -> str:
                 continue
         out.append(line)
     return re.sub(r"\n{3,}", chr(10) * 2, chr(10).join(out)).strip()
+
+
+def is_ban(line: str) -> bool:
+    return bool(_BAN.search(line))
+
+
+def release_recommendation(result: dict) -> str:
+    """Рекомендация о выпуске на линию по приоритету (считает код): это не запрет, решение за механиком."""
+    if result.get("status") != "anomaly" or is_no_ticket(result):
+        return ""
+    urg, _ = urgency_reason(result)
+    return (f"Рекомендация: {URGENCY_MEANING[urg]} (приоритет {PRIORITY_RU[urg]}). Прямого запрета эксплуатации "
+            "в руководстве на этот двигатель не найдено, решение о выпуске принимает механик.")

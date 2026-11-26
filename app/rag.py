@@ -30,9 +30,19 @@ _stem = snowballstemmer.stemmer("russian")
 _WORD = re.compile(r"[a-zа-яё0-9]+(?:[.,][0-9]+)?", re.IGNORECASE)
 
 
+# Символы шрифта Symbol в PDF приходят из области частного использования Unicode (U+F0xx):
+# в окне страницы это квадратики, а модель не понимает, что «207000» - это «20…7000»
+SYMBOL_FONT = {0xF02D: "-", 0xF02B: "+", 0xF0B0: "°", 0xF0B1: "±", 0xF0B7: "•", 0xF0C6: "∅", 0xF0D7: "·",
+               0xF0B4: "×", 0xF0A2: "′", 0xF0B2: "″", 0xF0BC: "…", 0xF03D: "=", 0xF0A3: "≤", 0xF0B3: "≥"}
+
+
+def fix_symbols(t: str) -> str:
+    return t.translate(SYMBOL_FONT)
+
+
 def clean_text(t: str) -> str:
     """Склеивает переносы «воз-\\nдуха», убирает лишние пробелы, сохраняет строки."""
-    t = t.replace("­", "")
+    t = fix_symbols(t).replace("­", "")
     t = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", t)
     t = re.sub(r"[ \t ]+", " ", t)
     t = re.sub(r"\n\s*\n+", "\n", t)

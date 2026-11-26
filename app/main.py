@@ -75,6 +75,7 @@ class Ask(BaseModel):
     vehicle_id: str
     text: str = Field(min_length=1, max_length=1000)
     history: list[Turn] = Field(default_factory=list, max_length=12)  # диалог хранится на устройстве механика
+    diagnosed: bool = True  # диагностика по последней проверке уже была в этом чате
 
 
 @app.post("/api/diagnose/{vehicle_id}")
@@ -91,7 +92,7 @@ async def ask(body: Ask, request: Request):
     if not _rate_ok(request.client.host):
         raise HTTPException(429, "Слишком много запросов, подождите минуту")
     history = [t.model_dump() for t in body.history]
-    return _sse(agent.ask(body.vehicle_id, body.text.strip(), history))
+    return _sse(agent.ask(body.vehicle_id, body.text.strip(), history, body.diagnosed))
 
 
 @app.get("/api/tickets/{tid}")
