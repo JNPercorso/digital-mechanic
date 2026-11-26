@@ -152,3 +152,9 @@ def test_trend_claim_checked_against_history():
 def test_hypotheses_heading_always_marked():
     t = rules.mark_hypotheses("**Наблюдения**\nx\n**Гипотезы**\n- износ\n**Вероятные причины**\n- y")
     assert t.count("**Гипотезы (не из руководства)**") == 2
+
+
+def test_parts_must_fit_ticket_works():
+    ops = ["Осмотреть коромысла и штанги; при износе заменить втулки коромысел"]
+    assert rules.part_fits_works("Втулка коромысла 236-1007118-В", ops)
+    assert not rules.part_fits_works("Втулка толкателя 236-1007186", ops)

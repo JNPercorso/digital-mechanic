@@ -57,5 +57,20 @@ async def judge_one(vehicle: str, history: list[dict], question: str, answer: st
         return {"score": None, "violations": [], "comment": f"судья недоступен: {ex!r}"[:200]}
 
 
-def judge(vehicle: str, history: list[dict], question: str, answer: str) -> dict:
-    return asyncio.run(judge_one(vehicle, history, question, answer))
+def judge(vehicle: str, history: list[dict], question: str, answer: str, votes: int = 3) -> dict:
+    """Три независимые оценки: итог - медиана, нарушение засчитывается, если его отметили минимум двое.
+    Так случайные придирки одной оценки не занижают хороший ответ."""
+    async def run():
+        return [await judge_one(vehicle, history, question, answer) for _ in range(votes)]
+    runs = [r for r in asyncio.run(run()) if r.get("score")]
+    if not runs:
+        return {"score": None, "violations": [], "comment": "судья недоступен"}
+    scores = sorted(int(r["score"]) for r in runs)
+    by_rule = {}
+    for r in runs:
+        for v in {str(x.get("rule")): x for x in r.get("violations", [])}.values():
+            by_rule.setdefault(str(v.get("rule")), []).append(v)
+    need = 2 if len(runs) >= 2 else 1
+    return {"score": scores[len(scores) // 2], "scores": scores,
+            "violations": [vs[0] for vs in by_rule.values() if len(vs) >= need],
+            "comment": runs[0].get("comment", ""), "cost_rub": round(sum(r.get("cost_rub", 0) for r in runs), 4)}

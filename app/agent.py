@@ -341,6 +341,8 @@ class Run:
             nos = rag.PART_NO.findall(x)
             # обозначение детали должно совпасть целиком (одна лишняя или пропущенная цифра - другая деталь)
             ok = all(n.upper() in known for n in nos) if nos else rules.op_supported(x, seen_text)
+            if ok and not rules.part_fits_works(x, ops):
+                ok = False  # деталь узла есть в руководстве, но к работам этой заявки не относится
             (parts if ok else bad_parts).append(x)
         if bad_parts:
             store.log_event("rejected_parts", {"parts": bad_parts}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
