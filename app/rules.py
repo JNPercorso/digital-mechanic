@@ -286,7 +286,8 @@ def unsupported_lines(text: str, allowed_numbers: set[str] = frozenset()) -> tup
         body = _NOT_NORM.sub("", _MODEL.sub("", body))
         for x in sorted(allowed_numbers, key=len, reverse=True):  # данные машины (оценки, даты) - не нормативы
             body = body.replace(x, "")
-        ban = _BAN.search(s) and "[[" not in s  # запрет эксплуатации - только со ссылкой на страницу руководства
+        ban = (_BAN.search(s) or (_MANUAL_CLAIM.search(s) and not _NO_MANUAL.search(s))) and "[[" not in s
+        # запрет эксплуатации и ссылка на руководство на словах - только со ссылкой на страницу
         if not ban and ("противореч" in section or "[[" in s or not _NUM.search(body)):
             out.append(line)
         else:
@@ -545,3 +546,63 @@ def russify_terms(text: str) -> tuple[str, int]:
         text, k = re.subn(rf"\b{pat}\b", ru, text, flags=re.I)
         n += k
     return text, n
+
+
+# «По руководству», «согласно руководству» без ссылки на страницу - гипотеза, выданная за руководство
+_MANUAL_CLAIM = re.compile(r"(по|согласно|в соответствии с)\s+руководств|руководств\w*\s+(указан|сказан|предписыва|требует|рекоменду)|"
+                           r"(указан|сказан|написан|приведен)\w*\s+в\s+руководств", re.I)
+_NO_MANUAL = re.compile(r"(в руководств\w*[^.]{0,40}(нет|не\s))|(не\s[^.]{0,20}в руководств)", re.I)
+
+DIAG_ORDER = ["наблюдени", "гипотез", "проверк", "возможный ремонт", "источник", "огранич"]
+
+
+def enforce_structure(text: str, result: dict, refs: list[dict]) -> tuple[str, list[str]]:
+    """Ответ на результат диагностики - в порядке ТЗ: наблюдения, гипотезы, проверки, возможный ремонт,
+    источник, ограничения. Недостающие наблюдения, источник и ограничения код добавляет сам."""
+    parts, cur, head_txt = {}, None, {}
+    pre = []
+    for line in text.split(chr(10)):
+        m = re.match(r"^\*\*(.+?)\*\*\s*$", line.strip())
+        key = next((k for k in DIAG_ORDER if m and k in m.group(1).lower()), None)
+        if key:
+            cur = key
+            head_txt[key] = line.strip()
+            parts.setdefault(key, [])
+            continue
+        (parts[cur] if cur else pre).append(line)
+    added = []
+    if "наблюдени" not in parts:
+        parts["наблюдени"] = [f"- Проверка {result.get('session_id')}: отклонение «{result.get('anomaly_title')}», "
+                              f"оценка отклонения {n2(result.get('anomaly_score') or 0)}, точность распознавания "
+                              f"{n2(result.get('confidence') or 0)}."] + ([f"- {result['description']}"] if result.get("description") else [])
+        head_txt["наблюдени"] = "**Наблюдения**"
+        added.append("наблюдения")
+    if "источник" not in parts and refs:
+        parts["источник"] = [" ".join(f"[[{r['doc_id']}:{r['page']}]]" for r in refs)]
+        head_txt["источник"] = "**Источник**"
+        added.append("источник")
+    if "огранич" not in parts:
+        parts["огранич"] = ["- Вывод сделан по звуку двигателя; окончательное решение принимает механик после дефектовки."]
+        head_txt["огранич"] = "**Ограничения**"
+        added.append("ограничения")
+    out = [x for x in pre if x.strip()]
+    for k in DIAG_ORDER:
+        if k in parts:
+            body = [x for x in parts[k]]
+            while body and not body[-1].strip():
+                body.pop()
+            if out:
+                out.append("")
+            out += [head_txt[k]] + body
+    return chr(10).join(out).strip(), added
+
+
+def looks_offtopic(text: str, tool_calls: int, refs: list, vehicle: dict) -> bool:
+    """Ответ без инструментов, без ссылок и без данных машины, длиннее одной фразы - это не по технике
+    (стихи, анекдоты, общие темы): механику показываем стандартную фразу."""
+    if tool_calls or refs or len(text) < 40:
+        return False
+    vt = " ".join(str(vehicle.get(k) or "") for k in ("vehicle_id", "engine_model", "model", "garage_no", "make")).lower()
+    words = [w for w in re.findall(r"[\w-]{3,}", vt)]
+    tech = re.compile(r"машин|техник|механик|двигател|масл|клапан|зазор|давлен|ремонт|заявк|проверк|дефект|руководств|узел|агрегат|охлажд|топлив", re.I)
+    return not tech.search(text) and not any(w in text.lower() for w in words)

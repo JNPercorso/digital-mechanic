@@ -35,6 +35,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 - Данные машины (госномер, марка, модель, гаражный номер, двигатель) - бери из строки «Машина» выше, без инструментов.
 - Последняя проверка, история, «стало лучше или хуже», сравнение с прошлой проверкой - get_vehicle_history: сравни оценку отклонения и тип неисправности последних проверок, скажи вывод одной-двумя фразами.
 - Прошлые заявки и дефектовки - get_vehicle_history.
+- Результат прошлой проверки (по номеру или дате) - get_check_result с её номером, только для ознакомления: черновик заявки делается лишь по последней проверке.
 - «Можно ли выпускать на линию» - get_check_result: ответь одной-двумя фразами по полям priority и priority_meaning (их считает код), без разбора неисправности. Это рекомендация; запрет выпуска - только если в руководстве прямо сказано, со ссылкой.
 - «Покажи заявку», «где черновик», «покажи результат диагностики» - вызови show_in_chat и ответь одной фразой.
 
@@ -291,6 +292,9 @@ class Run:
         r = self.result
         if not r or r.get("status") != "anomaly":
             return {"error": "Заявка на дефектовку формируется только по проверке с отклонением"}, evs
+        if r.get("session_id") != services.latest_session(self.v["vehicle_id"])["session_id"]:
+            return {"error": "Заявка формируется только по последней проверке. По прошлым проверкам - только "
+                             "ознакомиться с результатом; черновик не делай и скажи об этом механику."}, evs
         if rules.is_no_ticket(r):
             return {"error": "Точность распознавания ниже порога: заявка не формируется, нужна повторная запись"}, evs
         raw = [x for x in (args.get("references") or []) if isinstance(x, dict)]
@@ -450,6 +454,15 @@ class Run:
                 if rejected:
                     store.log_event("rejected_citations", {"refs": rejected}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
+                if self.node and self.result and self.result.get("status") == "anomaly":
+                    text, added = rules.enforce_structure(text, self.result, refs)  # порядок разделов по ТЗ
+                    if added:
+                        store.log_event("structure_completed", {"added": added}, request_id=self.id,
+                                        vehicle_id=self.v["vehicle_id"])
+                elif rules.looks_offtopic(text, self.tool_calls, refs, self.v):
+                    store.log_event("blocked_offtopic", {"text": text[:1000]}, request_id=self.id,
+                                    vehicle_id=self.v["vehicle_id"])
+                    text = OFFTOPIC
                 if _LEAK.search(text):  # в ответ попало внутреннее устройство агента
                     store.log_event("blocked_leak", {"text": text[:2000]}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])

@@ -163,3 +163,25 @@ def test_parts_must_fit_ticket_works():
 def test_english_ml_terms_replaced():
     t, n = rules.russify_terms("Проверка: anomaly, confidence 0.91, anomaly_score 0.85")
     assert n == 3 and "anomaly" not in t and "точность распознавания" in t
+
+
+def test_manual_claim_without_citation_removed():
+    out, removed = rules.unsupported_lines("По руководству причина - износ вкладышей.\nВ руководстве нет нормы давления.\n"
+                                           "Согласно руководству заменить фильтр [[yamz236_rk:232]]")
+    assert removed == ["По руководству причина - износ вкладышей."]
+
+
+def test_diagnosis_structure_enforced():
+    r = {"session_id": "S-1", "anomaly_title": "Низкое давление масла", "anomaly_score": 0.85, "confidence": 0.91}
+    t, added = rules.enforce_structure("**Проверки**\n- манометр [[a:1]]\n**Гипотезы (не из руководства)**\n- износ",
+                                       r, [{"doc_id": "a", "page": 1}])
+    heads = [x for x in t.split("\n") if x.startswith("**")]
+    assert heads == ["**Наблюдения**", "**Гипотезы (не из руководства)**", "**Проверки**", "**Источник**", "**Ограничения**"]
+    assert set(added) == {"наблюдения", "источник", "ограничения"}
+
+
+def test_offtopic_long_answer_detected():
+    v = {"vehicle_id": "T792HO98", "engine_model": "ЯМЗ-236М2"}
+    poem = "Трактор едет по полям, рокот слышен тут и там. Солнце светит, ветер дует, тракторист весь день колдует над землёй."
+    assert rules.looks_offtopic(poem, 0, [], v)
+    assert not rules.looks_offtopic("Госномер T792HO98, двигатель ЯМЗ-236М2, гаражный Г-112. " * 3, 0, [], v)

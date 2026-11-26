@@ -136,7 +136,10 @@ def problems(s: dict) -> list[str]:
 def run_dialog(v: dict, f, runs: list, use_judge: bool) -> None:
     """Диалог как в интерфейсе: история user/answer, флаг «диагностика уже была»."""
     history, diagnosed = [], False
-    for q in DIALOG:
+    # старая проверка с точностью ниже 0,50: заявки по ней быть не должно
+    old_low = [x for x in v["sessions"][:-1] if x.get("confidence") is not None and x["confidence"] < 0.5]
+    questions = DIALOG + [f"Покажи результат проверки {x['session_id']} и подготовь по ней заявку" for x in old_low]
+    for q in questions:
         body = {"vehicle_id": v["vehicle_id"], "text": q, "history": history[-6:], "diagnosed": diagnosed}
         try:
             evs = sse("/api/ask", body)
@@ -145,6 +148,8 @@ def run_dialog(v: dict, f, runs: list, use_judge: bool) -> None:
         s = summarize("dialog", v, evs)
         s["question"] = q
         s["problems"] = problems(s)
+        if any(x["session_id"] in q for x in old_low) and any(e["type"] == "ticket_draft" for e in evs):
+            s["problems"].append("заявка по проверке с точностью ниже 0,50")
         answers = [e["text"] for e in evs if e["type"] == "answer"]
         if any(e["type"] == "diag_start" for e in evs):
             diagnosed = True
@@ -174,7 +179,8 @@ def judge_answer(v: dict, history: list, q: str, answer: str) -> dict:
                        "гаражный номер": v.get("garage_no"), "двигатель": v["engine_model"],
                        "проверки": checks, "заявки": [t["toir_ticket_id"] for t in full.get("tickets", [])]},
                       ensure_ascii=False)
-    return judge(info, history, q, answer)
+    votes = int(next((a.split("=")[1] for a in sys.argv if a.startswith("--votes=")), "3"))
+    return judge(info, history, q, answer, votes=votes)
 
 
 def main() -> None:
@@ -186,12 +192,20 @@ def main() -> None:
     runs = []
     use_judge = "--judge" in sys.argv
     with open(out / "events.jsonl", "w", encoding="utf-8") as f:
-        if "--dialogs" in sys.argv:
-            seen = set()
+        if "--dialogs" in sys.argv or "--dialogs-all" in sys.argv:
+            seen, normal_seen = set(), set()
             for v in json.loads(urllib.request.urlopen(BASE + "/api/vehicles").read()):
                 last = v["sessions"][-1]
-                if last["status"] == "anomaly" and (last.get("confidence") or 0) >= 0.6 and v["engine_model"] not in seen:
-                    seen.add(v["engine_model"])
+                if "--dialogs-all" in sys.argv:
+                    # все машины с отклонением и сбоем + по одной машине в норме на каждый двигатель
+                    take = last["status"] != "normal" or v["engine_model"] not in normal_seen
+                    if last["status"] == "normal" and take:
+                        normal_seen.add(v["engine_model"])
+                else:
+                    take = (last["status"] == "anomaly" and (last.get("confidence") or 0) >= 0.6
+                            and v["engine_model"] not in seen)
+                    seen.add(v["engine_model"]) if take else None
+                if take:
                     run_dialog(v, f, runs, use_judge)
             vehicles = []
         for v in vehicles:
