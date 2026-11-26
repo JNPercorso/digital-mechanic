@@ -499,6 +499,15 @@ class Run:
                     content += chr(10) + chr(10) + rules.conflict_block(c)
                 text, refs, rejected = rules.filter_citations(content, self.engine, self.seen_pages)
                 self._tag(refs)
+                # блок с нормативами без ссылки: если они дословно есть на найденной странице - ссылку ставит код
+                text, attached = rules.attach_citations(
+                    text, {k: rag.page_text(*k) or "" for k in self.seen_pages}, self.ml_numbers())
+                if attached:
+                    store.log_event("attached_citations", {"pages": attached}, request_id=self.id,
+                                    vehicle_id=self.v["vehicle_id"])
+                    text, refs2, _ = rules.filter_citations(text, self.engine, self.seen_pages)
+                    refs = refs + [r for r in refs2 if (r["doc_id"], r["page"]) not in {(x["doc_id"], x["page"]) for x in refs}]
+                    self._tag(refs)
                 text, removed = rules.unsupported_lines(text, self.ml_numbers())
                 text, unverified = rules.unverified_cited_lines(text, rag.page_text, self.node, self.ml_numbers())
                 if unverified:  # утверждение со ссылкой, которого нет на этой странице, - гипотеза под видом цитаты

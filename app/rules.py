@@ -649,3 +649,36 @@ def looks_offtopic(text: str, tool_calls: int, refs: list, vehicle: dict) -> boo
     words = [w for w in re.findall(r"[\w-]{3,}", vt)]
     tech = re.compile(r"машин|техник|механик|двигател|масл|клапан|зазор|давлен|ремонт|заявк|проверк|дефект|руководств|узел|агрегат|охлажд|топлив", re.I)
     return not tech.search(text) and not any(w in text.lower() for w in words)
+
+
+
+def attach_citations(text: str, pages: dict, allowed_numbers: set[str] = frozenset()) -> tuple[str, list[str]]:
+    """Блок с нормативами без ссылки: если все его числа и большая часть слов есть на одной из страниц,
+    найденных поиском в этом запросе, код ставит ссылку на неё (источник подтверждён дословно).
+    pages: {(doc_id, page): текст}. Блоки, для которых страница не нашлась, остаются как есть (их уберёт проверка)."""
+    lines = text.split(chr(10))
+    block = _block_cites(lines)
+    attached, i = [], 0
+    while i < len(lines):
+        st = lines[i].strip()
+        if not st or block[i] or re.match(r"^(\*\*.+\*\*|#+\s.+)$", st):
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(lines) and lines[j + 1].strip() and not block[j + 1] \
+                and not re.match(r"^(\*\*.+\*\*|#+\s.+)$", lines[j + 1].strip()):
+            j += 1
+        body = " ".join(lines[i:j + 1])
+        clean = _NOT_NORM.sub("", _MODEL.sub("", body))
+        for x in sorted(allowed_numbers, key=len, reverse=True):
+            clean = clean.replace(x, "")
+        nums = _NUM.findall(clean)
+        if nums:
+            for (d, p), t in pages.items():
+                pt = _norm(t)
+                if all(_norm(n) in pt for n in nums) and op_supported(body, t):
+                    lines[j] = lines[j].rstrip() + f" [[{d}:{p}]]"
+                    attached.append(f"{d}:{p}")
+                    break
+        i = j + 1
+    return chr(10).join(lines), attached

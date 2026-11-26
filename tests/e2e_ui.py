@@ -119,7 +119,10 @@ def main() -> None:
                     except urllib.error.HTTPError as e:
                         server_refused = e.code == 409
                     check(f"[{tag}] сервер не принимает отправку без подтверждения", server_refused)
-                    tk.locator("[data-lowok]").click()  # черновик перерисовывается после отметки
+                    # галочку может закрывать закреплённая строка ввода: ставим её в центр экрана
+                    tk.locator("[data-lowok]").evaluate("el => el.scrollIntoView({block: 'center'})")
+                    page.wait_for_timeout(300)
+                    tk.locator("[data-lowok]").click()
                     page.wait_for_timeout(300)
                     tk = page.locator("#chat .chat-ticket .ticket").last
                     tk.locator('[data-tk="send"]').click()
