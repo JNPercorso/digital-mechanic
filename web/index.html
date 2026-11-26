@@ -421,7 +421,7 @@ function renderMain(){
  <div class="chat" id="chat"></div>
  <div class="composer"><input id="ask" placeholder="Вопрос по руководству ${v.engine}"><button class="mic" id="bMic" title="Сказать голосом" aria-label="Голосовой ввод">${MIC}</button><button class="btnp" id="bAsk" ${busy?'disabled':''} aria-label="Спросить"><span class="ask-txt">Спросить</span><span class="ask-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;transform:translate(0,0.5px)"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg></span></button></div>`;
  $('chat').innerHTML=chatLog[v.id]||'<div class="empty" style="padding:20px"><i class="ti ti-message-2"></i>Нажмите «Получить результат диагностики» или задайте вопрос</div>';
- $('bDiag').onclick=()=>runDiag(v);$('bMic').onclick=()=>micClick(v);$('bAsk').onclick=()=>runAsk(v);$('ask').onkeydown=e=>{if(e.key==='Enter')runAsk(v)};
+ fillDraft();$('bDiag').onclick=()=>runDiag(v);$('bMic').onclick=()=>micClick(v);$('bAsk').onclick=()=>runAsk(v);$('ask').onkeydown=e=>{if(e.key==='Enter')runAsk(v)};
  renderTicketPane();
 }
 function renderTicketPane(){const p=$('paneTicket');p.innerHTML='<div id="tkSlot"></div>';$('tkSlot').innerHTML=draft&&sel&&draft.vid===sel.id?ticketHTML(draft):'<div class="card"><div class="chead">Заявка на дефектовку</div><div class="mut">Черновик заявки появится после диагностики по последней проверке, если в руководстве есть подходящая процедура.</div></div>'+((tickets[sel?.id]||[]).map(t=>`<div class="note n-ok" style="margin-top:8px"><i class="ti ti-check"></i>${t.no} · ${t.time}</div>`).join(''));bindTicket();}
@@ -480,7 +480,7 @@ function updSession(){$('sReq').textContent=S.req;$('sLlm').textContent=S.llm;$(
 
 // ===== Запрос к агенту: события приходят потоком (SSE) - шаги, вызовы модели, ответ, черновик заявки
 async function runAgent(url,body,kind,userText){if(busy||!sel)return;const v=sel;startReq(kind);addChat(`<div class="msg me">${esc(userText)}</div>`,v.id);
- let stepId=null,result=null;const chk=[];
+ let stepId=null,result=null,pendingTk=false;const chk=[];
  const stepDone=()=>{if(stepId){chatLog[v.id]=chatLog[v.id].replace(`<i class="ti ti-loader-2 spin"></i><span data-s="${stepId}">`,`<i class="ti ti-check"></i><span data-s="${stepId}">`);stepId=null;addChat('',v.id);}};
  const handle=e=>{switch(e.type){
   case 'step':stepDone();stepId='s'+Math.random().toString(36).slice(2);addChat(`<div class="step"><i class="ti ti-loader-2 spin"></i><span data-s="${stepId}">${esc(e.text)}</span></div>`,v.id);logEv('step',esc(e.text));addStep(e.tool||'tool','tool',0,0,0);if(e.tool==='search_manual'&&!chk.find(c=>c[0]==='eng'))chk.push(['eng',true,v.engine]);setStream('busy');break;
@@ -491,9 +491,10 @@ async function runAgent(url,body,kind,userText){if(busy||!sel)return;const v=sel
    if(result&&result.status==='check_failed')addChat(`<div class="note n-bad" style="position:relative;padding-right:46px"><i class="ti ti-microphone-off"></i><div class="md">${md(e.text,[])}</div><button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить">${VOL}</button></div><button class="btn" data-retry><i class="ti ti-refresh"></i> Повторить проверку</button>`,v.id);
    else addChat(`<div class="msg md" id="${id}">${md(e.text,e.refs)}<button class="spk" data-sid="${id}" title="Озвучить" aria-label="Озвучить ответ">${VOL}</button></div>`,v.id);
    if(e.searched){chk.push(['doc',!e.rejected,e.refs.length?e.refs.length+' ссылок':'ссылок нет']);chk.push(['page',!e.rejected,e.rejected?'убрано '+e.rejected:'все из поиска']);}
+   if(pendingTk){addChat('<div class="chat-ticket"></div>',v.id);pendingTk=false;}
    logEv('answer','ответ агента');break;}
   case 'ticket_draft':draft={vid:v.id,dbid:e.id,code:e.payload.anomaly_type,conclusion:e.payload.conclusion,prio:PRIO[e.payload.urgency],why:e.extra.why,works:e.payload.operations,parts:e.payload.spare_parts,srcs:e.extra.refs,edited:false};
-   addChat('<div class="chat-ticket"></div>',v.id);chk.push(['confirm',null,'ждёт механика']);logEv('ticket_draft','черновик заявки готов');break;
+   pendingTk=true;chk.push(['confirm',null,'ждёт механика']);logEv('ticket_draft','черновик заявки готов');break;
   case 'error':stepDone();addChat(note('bad',e.text),v.id);logEv('error',esc(e.text));break;}};
  try{const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):null});
   if(!res.ok){let t='Ошибка сервера '+res.status;try{t=(await res.json()).detail||t;}catch(x){}addChat(note('bad',t),v.id);}
@@ -501,7 +502,7 @@ async function runAgent(url,body,kind,userText){if(busy||!sel)return;const v=sel
    for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
     while((i=buf.indexOf('\n\n'))>=0){const ch=buf.slice(0,i);buf=buf.slice(i+2);if(!ch.startsWith('data: '))continue;let e;try{e=JSON.parse(ch.slice(6));}catch(x){continue;}handle(e);}}}
  }catch(x){addChat(note('bad','Нет связи с сервером. Проверьте интернет и повторите.'),v.id);}
- stepDone();renderChecks(chk);endReq();renderTicketPane();}
+ stepDone();if(pendingTk)addChat('<div class="chat-ticket"></div>',v.id);renderChecks(chk);endReq();renderTicketPane();}
 document.addEventListener('click',e=>{if(!e.target.closest('[data-retry]'))return;addChat(note('warn','Повторите запись на посту (прогретый двигатель, холостой ход), затем снова нажмите «Получить результат диагностики».','refresh'));logEv('ui','повторная проверка запрошена');});
 function runDiag(v){runAgent('api/diagnose/'+encodeURIComponent(v.id),null,'диагностика','Получить результат диагностики');}
 function runAsk(v){const a=$('ask');const q=a?a.value.trim():'';if(!q||busy)return;a.value='';runAgent('api/ask',{vehicle_id:v.id,text:q},'вопрос',q);}

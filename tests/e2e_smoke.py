@@ -21,6 +21,10 @@ def run(page, vehicle_id: str, name: str, send: bool):
     page.click("#bDiag")
     page.wait_for_function("!busy", timeout=120_000)
     page.screenshot(path=str(OUT / f"{name}_{WIDTH}.png"), full_page=False)
+    if send:
+        assert page.locator('[data-tk="send"]:visible').count() > 0, "черновик заявки не виден"
+        page.locator('[data-tk="send"]:visible').first.scroll_into_view_if_needed()
+        page.screenshot(path=str(OUT / f"{name}_draft_{WIDTH}.png"))
     errors = page.locator(".note.n-bad").count()
     if send:
         btn = page.locator('[data-tk="send"]:visible').first
