@@ -162,6 +162,17 @@ def status():
     return {"queue": llm.queue_state()}
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    return FileResponse(WEB / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Без кеша браузера, чтобы обновление приложения доходило сразу
+    return FileResponse(WEB / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
 def index():
     return FileResponse(WEB / "index.html")
