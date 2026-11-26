@@ -10,3 +10,4 @@ index/
 data/*.db
 logs/
 temp/
+.claude/
