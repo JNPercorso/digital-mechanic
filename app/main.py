@@ -28,17 +28,10 @@ def _rate_ok(ip: str) -> bool:
     return len(hits) <= RATE_LIMIT
 
 
-def _client(request: Request) -> str:
-    """Идентификатор браузера (из localStorage) - у каждого свой диалог по машине."""
-    return (request.headers.get("x-client-id") or "anon")[:64]
-
-
-def _sse(gen, client_id: str = "", vehicle_id: str = ""):
+def _sse(gen):
     async def stream():
         try:
             async for e in gen:
-                if client_id:
-                    store.add_chat(client_id, vehicle_id, e)
                 yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
         except Exception as ex:  # интерфейс не должен падать: показываем понятную ошибку
             store.log_event("crash", {"error": repr(ex)})
@@ -73,9 +66,15 @@ def fault_types():
     return services.fault_types()
 
 
+class Turn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=6000)
+
+
 class Ask(BaseModel):
     vehicle_id: str
     text: str = Field(min_length=1, max_length=1000)
+    history: list[Turn] = Field(default_factory=list, max_length=12)  # диалог хранится на устройстве механика
 
 
 @app.post("/api/diagnose/{vehicle_id}")
@@ -83,9 +82,7 @@ async def diagnose(vehicle_id: str, request: Request):
     _vehicle_or_404(vehicle_id)
     if not _rate_ok(request.client.host):
         raise HTTPException(429, "Слишком много запросов, подождите минуту")
-    cid = _client(request)
-    store.add_chat(cid, vehicle_id, {"type": "user", "text": "Получить результат диагностики", "kind": "diagnose"})
-    return _sse(agent.diagnose(vehicle_id), cid, vehicle_id)
+    return _sse(agent.diagnose(vehicle_id))
 
 
 @app.post("/api/ask")
@@ -93,22 +90,17 @@ async def ask(body: Ask, request: Request):
     _vehicle_or_404(body.vehicle_id)
     if not _rate_ok(request.client.host):
         raise HTTPException(429, "Слишком много запросов, подождите минуту")
-    cid = _client(request)
-    store.add_chat(cid, body.vehicle_id, {"type": "user", "text": body.text.strip()})
-    return _sse(agent.ask(body.vehicle_id, body.text.strip(), cid), cid, body.vehicle_id)
+    history = [t.model_dump() for t in body.history]
+    return _sse(agent.ask(body.vehicle_id, body.text.strip(), history))
 
 
-@app.get("/api/chat/{vehicle_id}")
-def chat(vehicle_id: str, request: Request):
-    """Сохранённый диалог по машине; черновики заявок - в текущем состоянии из базы."""
-    items = store.chat_items(_client(request), vehicle_id)
-    for it in items:
-        if it["type"] == "ticket_draft":
-            t = store.get_ticket(it["id"])
-            if t:
-                it.update(payload=t["payload"], extra=t["extra"], status=t["status"],
-                          toir_ticket_id=t["toir_ticket_id"])
-    return items
+@app.get("/api/tickets/{tid}")
+def ticket(tid: int):
+    """Текущее состояние черновика (для диалога, восстановленного с устройства)."""
+    t = store.get_ticket(tid)
+    if not t:
+        raise HTTPException(404, "Черновик не найден")
+    return t
 
 
 class TicketEdit(BaseModel):
@@ -142,7 +134,7 @@ def edit_ticket(tid: int, body: TicketEdit):
 
 
 @app.post("/api/tickets/{tid}/send")
-async def send_ticket(tid: int, request: Request):
+async def send_ticket(tid: int):
     """«Отправить в ТОиР» - только по нажатию механика."""
     t = store.get_ticket(tid)
     if not t:
@@ -157,7 +149,6 @@ async def send_ticket(tid: int, request: Request):
         raise HTTPException(502, str(e))
     store.update_ticket(tid, status="sent", toir_ticket_id=res["ticket_id"], sent_at=time.time())
     store.log_event("ticket_sent", res, actor="mechanic", vehicle_id=t["vehicle_id"])
-    store.add_chat(_client(request), t["vehicle_id"], {"type": "ticket_sent", "ticket_id": res["ticket_id"]})
     return store.get_ticket(tid)
 
 
@@ -203,20 +194,33 @@ def _highlight(paras: list[str], q: str) -> list[list[dict]]:
     return out
 
 
+def _marked(text: str, q: str, sq: str) -> list[list[dict]]:
+    """Абзацы с подсветкой: по фразе агента, а если она не нашлась на странице - по запросу поиска."""
+    paras = _reflow(text)
+    out = _highlight(paras, q[:500])
+    if sq and not any(x["h"] for p in out for x in p):
+        out = _highlight(paras, sq[:300])
+    return out
+
+
 @app.get("/api/manuals/{doc_id}/{page}")
-def manual_page(doc_id: str, page: int, q: str = ""):
+def manual_page(doc_id: str, page: int, q: str = "", sq: str = ""):
     """Страница PDF для окна просмотра ссылки: абзацы и подсветка фрагмента, на который сослался агент."""
     m = BY_ID.get(doc_id)
     text = rag.page_text(doc_id, page) if m else None
     if text is None:
         raise HTTPException(404, "Нет такой страницы")
     return {"doc_id": doc_id, "manual": m.title, "page": page, "pages": len(rag._pages()[doc_id]),
-            "paras": _highlight(_reflow(text), q[:500])}
+            "paras": _marked(text, q, sq)}
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^0-9a-zа-яё]", "", s.lower().replace("ё", "е"))
 
 
 @app.get("/api/manuals/{doc_id}/{page}/image")
-def manual_page_image(doc_id: str, page: int):
-    """Картинка страницы PDF (рисунки, таблицы) - рендер по запросу."""
+def manual_page_image(doc_id: str, page: int, q: str = "", sq: str = ""):
+    """Картинка страницы PDF (рисунки, таблицы); строки подсвеченного фрагмента закрашены маркером."""
     import pymupdf
     m = BY_ID.get(doc_id)
     if not m:
@@ -224,7 +228,17 @@ def manual_page_image(doc_id: str, page: int):
     doc = pymupdf.open(MANUALS_DIR / m.file)
     if not 1 <= page <= len(doc):
         raise HTTPException(404)
-    png = doc[page - 1].get_pixmap(dpi=110).tobytes("png")
+    pg = doc[page - 1]
+    text = rag.page_text(doc_id, page)
+    if text and (q or sq):
+        sents = [_norm(x["t"]) for p in _marked(text, q, sq) for x in p if x["h"]]
+        for b in pg.get_text("dict")["blocks"]:
+            for line in b.get("lines", []):
+                ln = _norm("".join(sp["text"] for sp in line["spans"]))
+                if len(ln) >= 4 and any(ln in s or (len(s) >= 12 and (s[:12] in ln or s[-12:] in ln)) for s in sents):
+                    pg.draw_rect(pymupdf.Rect(line["bbox"]) + (-2, -1, 2, 1), color=None,
+                                 fill=(1, 0.8, 0.1), fill_opacity=0.38, overlay=True)
+    png = pg.get_pixmap(dpi=150).tobytes("png")
     return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 

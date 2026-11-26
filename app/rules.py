@@ -37,11 +37,32 @@ def allowed_doc_ids(engine_model: str) -> set[str]:
     return {m.doc_id for m in manuals_for_engine(engine_model)}
 
 
+_ANY_CITE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def split_citations(text: str) -> str:
+    """Модель иногда пишет несколько страниц в одной ссылке: [[yamz536_re:173, 215]] или
+    [[yamz536_re:173; yamz536_rk:20]]. Разбиваем на отдельные ссылки [[doc:стр]]."""
+    def repl(m: re.Match) -> str:
+        out, doc = [], None
+        for part in re.split(r"[,;]", m.group(1)):
+            part = part.strip()
+            mm = re.fullmatch(r"(?:([a-z0-9_]+)\s*:\s*)?(?:стр\.?\s*)?(\d+)", part)
+            if not mm:
+                continue
+            doc = mm.group(1) or doc
+            if doc:
+                out.append(f"[[{doc}:{mm.group(2)}]]")
+        return " ".join(out)
+    return _ANY_CITE.sub(repl, text)
+
+
 def filter_citations(text: str, engine_model: str, seen_pages: set[tuple]) -> tuple[str, list[dict], list[str]]:
     """Оставляет в тексте только допустимые ссылки [[doc_id:page]].
 
     Возвращает (текст, список ссылок, список отклонённых ссылок для журнала).
     """
+    text = split_citations(text)
     allowed = allowed_doc_ids(engine_model)
     refs, rejected = [], []
 

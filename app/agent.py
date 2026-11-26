@@ -19,7 +19,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 
 Жёсткие правила:
 1. Любые нормативы, моменты затяжки, зазоры, давления, обороты, скорости, порядок работ и номера деталей бери ТОЛЬКО из фрагментов, которые search_manual вернул В ЭТОМ запросе. Ссылки из прошлых сообщений диалога не действуют - ищи заново. Своих цифр не придумывай: цифра без ссылки на страницу запрещена.
-2. После каждого утверждения из руководства ставь ссылку строго в виде [[doc_id:страница]], например [[yamz236_rk:96]]. Ссылаться можно только на страницы из результатов search_manual.
+2. После каждого утверждения из руководства ставь ссылку строго в виде [[doc_id:страница]], например [[yamz236_rk:96]]. Одна ссылка - одна страница: несколько страниц пиши подряд [[yamz536_re:173]] [[yamz536_re:215]]. Ссылаться можно только на страницы из результатов search_manual.
 3. Если в найденных фрагментах ответа нет - так и скажи: «В руководстве на этот двигатель этого нет» и рекомендуй дефектовку. Не бери данные с другого двигателя.
 4. Ты помощник: окончательное решение о двигателе принимает механик.
 5. Отвечай только на заданный вопрос, не добавляй сведения, о которых не спрашивали.
@@ -87,6 +87,7 @@ class Run:
         self.v = services.vehicle(vehicle_id)
         self.engine = self.v["engine_model"]
         self.seen_pages: set[tuple] = set()
+        self.page_queries: dict[tuple, str] = {}  # страница -> запрос, которым её нашли (для подсветки в окне страницы)
         self.result: dict | None = None   # последний полученный результат проверки
         self.tool_calls = 0
         self.llm_calls = 0
@@ -94,6 +95,11 @@ class Run:
         self.cost = 0.0
         self.t0 = time.time()
         self.events: list[dict] = []
+
+    def _tag(self, refs: list[dict]) -> None:
+        """Каждой ссылке - поисковый запрос, которым нашли страницу: запасной вариант для подсветки."""
+        for r in refs:
+            r["sq"] = self.page_queries.get((r["doc_id"], r["page"]), "")
 
     def ev(self, kind: str, **data) -> dict:
         e = {"type": kind, **data}
@@ -140,6 +146,7 @@ class Run:
             hits = rag.search(q, self.engine, k=5)
             for h in hits:
                 self.seen_pages.add((h["doc_id"], h["page"]))
+                self.page_queries.setdefault((h["doc_id"], h["page"]), q)
             if not hits:
                 return {"found": [], "note": "В руководствах этого двигателя ничего не найдено"}, evs
             return {"found": [{"doc_id": h["doc_id"], "manual": h["manual"], "page": h["page"],
@@ -153,6 +160,7 @@ class Run:
         if not r or r.get("status") != "anomaly":
             return {"error": "Заявка на дефектовку формируется только по проверке с отклонением"}, evs
         refs, bad = rules.check_references(args.get("references") or [], self.engine, self.seen_pages)
+        self._tag(refs)
         if bad:
             store.log_event("rejected_refs", {"refs": bad}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
         ops = [o for o in (args.get("operations") or []) if str(o).strip()]
@@ -217,6 +225,7 @@ class Run:
                 continue
             if not fc:
                 text, refs, rejected = rules.filter_citations(msg.get("content") or "", self.engine, self.seen_pages)
+                self._tag(refs)
                 if rejected:
                     store.log_event("rejected_citations", {"refs": rejected}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
@@ -280,12 +289,11 @@ async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
     yield {"type": "done"}
 
 
-async def ask(vehicle_id: str, text: str, client_id: str = "") -> AsyncIterator[dict]:
+async def ask(vehicle_id: str, text: str, history: list[dict] | None = None) -> AsyncIterator[dict]:
     """Вопрос механика в чате: агент сам решает, какие инструменты нужны."""
     run = Run(vehicle_id, require_search=True)
     store.log_event("question", {"text": text}, actor="mechanic", request_id=run.id, vehicle_id=vehicle_id)
-    history = store.chat_history(client_id, vehicle_id, 6)
-    msgs = [_system(run), *history, {"role": "user", "content": text}]
+    msgs = [_system(run), *(history or [])[-6:], {"role": "user", "content": text}]
     async for e in run.loop(msgs):
         yield e
     yield {"type": "done"}

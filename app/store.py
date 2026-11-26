@@ -114,30 +114,3 @@ def _decode(r: dict) -> dict:
     r["payload"] = json.loads(r["payload"])
     r["extra"] = json.loads(r["extra"] or "{}")
     return r
-
-
-# --- Диалог по машине: сохраняется на сервере отдельно для каждого браузера (client_id),
-# чтобы после перезагрузки страницы механик видел прежний разговор и полученный результат.
-CHAT_TYPES = {"user", "step", "warning", "check_result", "answer", "ticket_draft", "ticket_sent", "error"}
-
-
-def add_chat(client_id: str, vehicle_id: str, item: dict) -> None:
-    if item.get("type") in CHAT_TYPES:
-        _exec("INSERT INTO chat_items(client_id, vehicle_id, item, created_at) VALUES (?,?,?,?)",
-              (client_id, vehicle_id, json.dumps(item, ensure_ascii=False), time.time()))
-
-
-def chat_items(client_id: str, vehicle_id: str) -> list[dict]:
-    return [json.loads(r["item"]) for r in _rows(
-        "SELECT item FROM chat_items WHERE client_id=? AND vehicle_id=? ORDER BY id", (client_id, vehicle_id))]
-
-
-def chat_history(client_id: str, vehicle_id: str, limit: int = 6) -> list[dict]:
-    """Последние реплики диалога для модели (вопросы механика и ответы агента)."""
-    out = []
-    for it in chat_items(client_id, vehicle_id):
-        if it["type"] == "user":
-            out.append({"role": "user", "content": it["text"]})
-        elif it["type"] == "answer":
-            out.append({"role": "assistant", "content": it["text"]})
-    return out[-limit:]
