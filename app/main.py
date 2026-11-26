@@ -49,13 +49,8 @@ def _vehicle_or_404(vehicle_id: str) -> dict:
 
 @app.get("/api/vehicles")
 def vehicles():
-    out = []
-    for v in services.vehicles():
-        last = v["sessions"][-1] if v["sessions"] else None
-        out.append({k: v.get(k) for k in ("vehicle_id", "garage_no", "make", "model", "vehicle_type",
-                                          "engine_model", "fuel")}
-                   | {"last": last, "checks": len(v["sessions"])})
-    return out
+    """Парк с историей проверок (для списка, тренда и окна проверки)."""
+    return services.vehicles()
 
 
 @app.get("/api/vehicles/{vehicle_id}")

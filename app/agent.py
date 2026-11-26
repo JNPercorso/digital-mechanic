@@ -18,11 +18,12 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 Машина: {vehicle}. Двигатель: {engine}. Руководства этого двигателя: {manuals}.
 
 Жёсткие правила:
-1. Любые нормативы, моменты затяжки, зазоры, давления, порядок работ и номера деталей бери ТОЛЬКО из фрагментов, которые вернул инструмент search_manual. Своих цифр не придумывай.
+1. Любые нормативы, моменты затяжки, зазоры, давления, обороты, скорости, порядок работ и номера деталей бери ТОЛЬКО из фрагментов, которые search_manual вернул В ЭТОМ запросе. Ссылки из прошлых сообщений диалога не действуют - ищи заново. Своих цифр не придумывай: цифра без ссылки на страницу запрещена.
 2. После каждого утверждения из руководства ставь ссылку строго в виде [[doc_id:страница]], например [[yamz236_rk:96]]. Ссылаться можно только на страницы из результатов search_manual.
 3. Если в найденных фрагментах ответа нет - так и скажи: «В руководстве на этот двигатель этого нет» и рекомендуй дефектовку. Не бери данные с другого двигателя.
 4. Ты помощник: окончательное решение о двигателе принимает механик.
-5. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
+5. Отвечай только на заданный вопрос, не добавляй сведения, о которых не спрашивали.
+6. Ищи в руководстве конкретными словами (узел, симптом, операция), при необходимости сделай 2-3 разных поиска.
 
 Ответ на результат проверки с отклонением - в таком порядке, с заголовками:
 **Вердикт** - одна строка: что вероятно не так и насколько срочно.
@@ -32,7 +33,7 @@ SYSTEM = """Ты - «Цифровой механик», помощник мех�
 **Что проверить** - пошагово, с нормативами и ссылками.
 **Возможный ремонт** - работы, инструмент, материалы и запчасти (с каталожными номерами, если они есть в руководстве), со ссылками.
 **Ограничения** - чего в руководстве нет или что требует проверки на месте.
-После ответа на отклонение вызови draft_ticket, чтобы подготовить черновик заявки на дефектовку.
+Сначала найди процедуру в руководстве, затем вызови draft_ticket, чтобы подготовить черновик заявки на дефектовку, и после этого дай ответ механику. Номер черновика не упоминай: механик видит черновик рядом с ответом.
 
 На вопрос механика отвечай по той же логике, но только нужными пунктами; источник обязателен."""
 
@@ -77,7 +78,9 @@ def _short_result(r: dict) -> dict:
 class Run:
     """Один запрос механика: состояние для правил (что нашёл поиск, какая проверка)."""
 
-    def __init__(self, vehicle_id: str):
+    def __init__(self, vehicle_id: str, require_search: bool = False):
+        self.require_search = require_search  # вопрос механика: ответ только после поиска по руководству
+        self.nudged = False
         self.id = uuid.uuid4().hex[:12]
         self.v = services.vehicle(vehicle_id)
         self.engine = self.v["engine_model"]
@@ -172,7 +175,7 @@ class Run:
         async def on_wait():
             waiting.append(1)
 
-        for _ in range(MAX_TOOL_CALLS + 1):
+        for _ in range(MAX_TOOL_CALLS + 2):
             funcs = FUNCTIONS if self.tool_calls < MAX_TOOL_CALLS else None
             try:
                 res = await llm.chat(messages, funcs, on_wait=on_wait)
@@ -189,14 +192,27 @@ class Run:
             self.cost += llm.cost_rub(u)
             msg = res["message"]
             fc = msg.get("function_call")
+            step = {"get_check_result": "выбор: результат проверки", "get_vehicle_history": "выбор: история машины",
+                    "search_manual": "выбор: поиск в руководстве", "draft_ticket": "черновик заявки"}.get(
+                fc["name"] if fc else "", "ответ механику")
             store.log_usage(self.id, fc["name"] if fc else "answer", res["model"], u, res["seconds"])
+            yield {"type": "llm", "name": step, "model": res["model"], "tin": u.get("prompt_tokens", 0),
+                   "tout": u.get("completion_tokens", 0), "ms": int(res["seconds"] * 1000)}
             yield self.metrics()
+            if not fc and self.require_search and not self.seen_pages and not self.nudged:
+                # Код не принимает ответ без поиска по руководству: возвращаем модель к инструменту
+                self.nudged = True
+                store.log_event("rule_search_required", {}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
+                messages.append({"role": "assistant", "content": msg.get("content") or ""})
+                messages.append({"role": "user", "content": "Ответ не принят: ты не искал в руководстве. Если в ответе есть технические сведения, нормативы или рекомендации - вызови search_manual и ответь только по найденному, со ссылками. Если вопрос только об истории проверок этой машины - ответь без нормативов и рекомендаций по ремонту."})
+                continue
             if not fc:
                 text, refs, rejected = rules.filter_citations(msg.get("content") or "", self.engine, self.seen_pages)
                 if rejected:
                     store.log_event("rejected_citations", {"refs": rejected}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
-                yield self.ev("answer", text=text, refs=refs)
+                yield self.ev("answer", text=text, refs=refs, rejected=len(rejected),
+                              searched=bool(self.seen_pages), engine=self.engine)
                 store.add_message(self.v["vehicle_id"], "assistant", text)
                 return
             args = fc.get("arguments") or {}
@@ -258,7 +274,7 @@ async def diagnose(vehicle_id: str) -> AsyncIterator[dict]:
 
 async def ask(vehicle_id: str, text: str) -> AsyncIterator[dict]:
     """Вопрос механика в чате: агент сам решает, какие инструменты нужны."""
-    run = Run(vehicle_id)
+    run = Run(vehicle_id, require_search=True)
     store.log_event("question", {"text": text}, actor="mechanic", request_id=run.id, vehicle_id=vehicle_id)
     history = [m for m in store.recent_messages(vehicle_id, 6)]
     store.add_message(vehicle_id, "user", text)
