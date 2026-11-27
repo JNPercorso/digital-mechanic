@@ -394,9 +394,6 @@ def unverified_cited_lines(text: str, page_text, node: str = "",
                     continue
             out.append(line)
             continue
-        if "гипотез" in section:
-            out.append(CITE.sub("", line).rstrip())
-            continue
         body = re.sub(r"^(\d+[.)]|[-•*])\s+", "", CITE.sub("", s)).strip()
         texts = [page_text(d, int(p)) or "" for d, p in cites]
         if node:  # ответ по неисправности: проверки и ремонт - только со страниц про этот узел
@@ -574,8 +571,20 @@ _HYP_HEAD = re.compile(r"^\*\*(Гипотезы|Вероятные причин�
 
 
 def mark_hypotheses(text: str) -> str:
-    """Заголовок раздела гипотез всегда с пометкой, что это не из руководства (требование заказчика)."""
-    return _HYP_HEAD.sub("**Гипотезы (не из руководства)**", text)
+    """Раздел гипотез: причины из таблицы неисправностей руководства идут со ссылкой на страницу,
+    а каждое предположение без ссылки код помечает, что оно не из руководства (требование заказчика)."""
+    text = _HYP_HEAD.sub("**Гипотезы**", text)
+    out, section = [], ""
+    for line in text.split(chr(10)):
+        s = line.strip()
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s)
+        if h:
+            section = h.group(1).lower()
+        elif ("гипотез" in section and s and not CITE.search(s) and not s.endswith(":")
+              and "не из руководства" not in s):
+            line = line.rstrip().rstrip(".") + " (предположение, не из руководства)."
+        out.append(line)
+    return chr(10).join(out)
 
 
 
@@ -780,3 +789,63 @@ def clean_part(name: str) -> str:
         seen.add(w)
         words.append(w)
     return re.sub(r"\s+", " ", " ".join(words)).strip(" ;,")
+
+
+
+# А. Запчасти по работам руководства: «заменить ремни», «заменить термостат», «установить новую прокладку»
+_REPLACE = re.compile(r"(?:замен\w*|установить нов\w*|поставить нов\w*)\s+(?:на нов\w*\s+|комплектом\s+)?"
+                      r"([А-Яа-яЁё][^.;,()\n]{2,60}?)(?=\s+(?:при|если|в случае|после|и проверить|на нов\w*)\b|[.;,()\n]|$)", re.I)
+_VAGUE = re.compile(r"детал|изделие|узел|неисправн\w*$|вышедш|издели|элемент\b|их$|его$|её$", re.I)
+
+
+def parts_from_works(ops: list[str]) -> list[str]:
+    """Названия запчастей из работ заявки (взятых из руководства): что именно предписано заменить."""
+    out = []
+    for o in ops:
+        for m in _REPLACE.finditer(o):
+            name = re.sub(r"^(неисправн\w*|изношенн\w*|повреждённ\w*|поврежденн\w*|дефектн\w*)\s+", "",
+                          m.group(1).strip(), flags=re.I).strip().lower()  # как в работе: «оба ремня привода …»
+            if len(name) >= 4 and not _VAGUE.search(name):
+                if name not in out:
+                    out.append(name)
+    return out[:8]
+
+
+def _name_stems(text: str) -> set[str]:
+    return {w for w in _stems(re.sub(r"\d[\d.\-]*\S*", " ", text)) if len(w) >= 4}
+
+
+def _first_stem(text: str) -> str:
+    w = (text or "").split()
+    return next(iter(_stems(w[0])), "")[:5] if w else ""
+
+
+def find_designation(name: str, catalog: tuple) -> dict | None:
+    """Обозначение для запчасти из справочника: все значимые слова названия есть в названии детали
+    справочника и совпадает тип детали (первое слово): «Термостат» найдёт «Термостат 402.1306155»,
+    но не «Коробка термостата»."""
+    want = _name_stems(name)
+    if not want:
+        return None
+    best = None
+    for c in catalog:
+        have = _name_stems(c["name"])
+        if want <= have and _first_stem(name) == _first_stem(c["name"]):
+            if best is None or len(have) < len(_name_stems(best["name"])):
+                best = c  # самое короткое подходящее название - самое точное совпадение
+    return best
+
+
+def part_name_matches(part: str, catalog: tuple) -> bool:
+    """Название, которое пишет агент рядом с обозначением, совпадает с названием этой детали в руководстве."""
+    from app.rag import PART_NO
+    nos = PART_NO.findall(part)
+    if not nos:
+        return True
+    want = _name_stems(part)
+    for c in catalog:
+        if c["designation"] in nos:
+            have = _name_stems(c["name"])
+            return (bool(want and have) and _first_stem(part) == _first_stem(c["name"])
+                    and len(want & have) / len(want) >= 0.6)
+    return True  # обозначения нет в справочнике (встречается только в тексте) - проверяется по странице

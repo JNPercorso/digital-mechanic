@@ -274,3 +274,31 @@ if __name__ == "__main__":
         print("Символы заменены")
     else:
         print("Использование: python -m app.rag build [--reuse-ocr] | fix-symbols")
+
+
+_DASH = "-" + chr(0x2013) + chr(0x2014)
+
+
+@lru_cache(maxsize=8)
+def parts_catalog(engine_model: str) -> tuple:
+    """Справочник деталей из руководств двигателя: строки, где рядом стоят название и обозначение детали.
+
+    Каталога запчастей в базе нет, обозначения разбросаны по перечням, таблицам и текстам руководств.
+    Возвращает кортеж {designation, name, doc_id, page}; одно обозначение - одна запись (первая встреча).
+    """
+    out, seen = [], set()
+    tail = re.compile(r"[|(){}\[\]]|\b\d{1,3}\b|[" + _DASH + r":;,.]+\s*$")
+    for m in manuals_for_engine(engine_model):
+        for i, t in enumerate(_pages().get(m.doc_id, [])):
+            lines = t.split(CHR10)
+            for j, ln in enumerate(lines):
+                for d in PART_NO.findall(ln):
+                    if d in seen:
+                        continue
+                    name = re.sub(r"\s+", " ", tail.sub(" ", PART_NO.sub(" ", ln))).strip(" " + _DASH + ":;,.")
+                    if len(re.findall(r"[А-Яа-яЁё]", name)) < 4 and j:  # название в соседней строке
+                        name = re.sub(r"\s+", " ", PART_NO.sub(" ", lines[j - 1])).strip(" |" + _DASH + ":;,.")
+                    if 4 <= len(re.findall(r"[А-Яа-яЁё]", name)) and len(name) <= 90 and not _NOT_PART.search(name):
+                        seen.add(d)
+                        out.append({"designation": d, "name": name, "doc_id": m.doc_id, "page": i + 1})
+    return tuple(out)

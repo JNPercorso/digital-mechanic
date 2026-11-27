@@ -150,9 +150,13 @@ def test_trend_claim_checked_against_history():
     assert "стало хуже" in rules.trend_fact(sessions)[1]
 
 
-def test_hypotheses_heading_always_marked():
-    t = rules.mark_hypotheses("**Наблюдения**\nx\n**Гипотезы**\n- износ\n**Вероятные причины**\n- y")
-    assert t.count("**Гипотезы (не из руководства)**") == 2
+def test_hypotheses_marked_unless_from_manual():
+    t = rules.mark_hypotheses("**Наблюдения**\nx\n**Вероятные причины**\n- Засорён фильтр грубой очистки [[yamz236_re:53]]\n"
+                              "- Износ вкладышей коленчатого вала\n**Проверки**\n- манометр")
+    assert "**Гипотезы**" in t
+    assert "Засорён фильтр грубой очистки [[yamz236_re:53]]" in t                     # из таблицы неисправностей
+    assert "Износ вкладышей коленчатого вала (предположение, не из руководства)." in t  # своё предположение
+    assert "манометр (предположение" not in t
 
 
 def test_parts_must_fit_ticket_works():
@@ -236,3 +240,18 @@ def test_clean_part_from_table_row():
 
 def test_ban_word_nedopustimo():
     assert rules.is_ban("Система считает, что эксплуатация до дефектовки недопустима.")
+
+
+def test_parts_from_works_and_designation():
+    ops = ["Снять и проверить работу термостата; при необходимости заменить термостат.",
+           "При увеличенной вытяжке заменить комплектом оба ремня привода генератора.",
+           "Заменить вышедшие из строя детали."]
+    names = rules.parts_from_works(ops)
+    assert "термостат" in names and "оба ремня привода генератора" in names
+    assert not any("детал" in n for n in names)
+    catalog = ({"designation": "236-1306052", "name": "Коробка термостата", "doc_id": "d", "page": 1},
+               {"designation": "402.1306155", "name": "Термостат", "doc_id": "d", "page": 2})
+    assert rules.find_designation("Термостат", catalog)["designation"] == "402.1306155"
+    assert rules.find_designation("Термостат", catalog[:1]) is None          # коробка - не термостат
+    assert not rules.part_name_matches("Термостат 236-1306052", catalog)     # номер коробки под видом термостата
+    assert rules.part_name_matches("Коробка термостата 236-1306052", catalog)
