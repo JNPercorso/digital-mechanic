@@ -436,7 +436,7 @@ class Run:
         async def on_wait():
             waiting.append(1)
 
-        for _ in range(MAX_TOOL_CALLS + 2):
+        for _ in range(MAX_TOOL_CALLS + (2 if self.mode == "diagnose" else 0) + 3):  # шаги инструментов + ответ + повторы предохранителей
             limit = MAX_TOOL_CALLS + (2 if self.mode == "diagnose" else 0)
             funcs = ([f for f in FUNCTIONS if self.allow_draft or f["name"] != "draft_ticket"]
                      if self.tool_calls < limit else None)
