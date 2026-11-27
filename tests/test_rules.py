@@ -120,10 +120,11 @@ def test_conflict_block_shows_all_sources():
 
 
 def test_disputed_condition_not_presented_as_fact():
-    t = ("**Проверки**\n- Регулировать не ранее чем через 15 минут после остановки [[yamz236_rk:276]]\n"
-         "- Щупом проверить зазор [[yamz236_rk:43]]\n**Ограничения**\nВ руководствах разночтение про 15 минут")
-    out, removed = rules.disputed_lines(t, rules.CONFLICTS)
-    assert len(removed) == 1 and "Щупом" in out and "разночтение" in out
+    t = ("**Проверки**\n- Регулировать зазоры 0,25–0,30 мм на холодном двигателе (или не ранее чем через 15 минут "
+         "после остановки) [[yamz236_rk:276]]\n- Щупом проверить зазор [[yamz236_rk:43]]\n**Ограничения**\nВ руководствах разночтение про 15 минут")
+    out, changed = rules.disputed_lines(t, rules.CONFLICTS)
+    assert len(changed) == 1 and "0,25–0,30 мм на холодном двигателе" in out and "15 минут после" not in out.split("**Ограничения**")[0]
+    assert "Щупом" in out and "разночтение" in out
 
 
 def test_ticket_operations_use_conservative_condition():
@@ -210,3 +211,24 @@ def test_citation_attached_when_numbers_on_found_page():
     out, att = rules.attach_citations(text, {("yamz536_re", 173): page})
     assert att == ["yamz536_re:173"] and "0,50 мм [[yamz536_re:173]]" in out
     assert "0,77 мм" in out and "0,77 мм [[" not in out  # числа нет на странице - ссылка не ставится
+
+
+def test_page_for_other_engine_model():
+    assert rules.page_for_other_engine("5.15.4 Натяжение ремней на двигателях ЯМЗ-238Н-1, ЯМЗ-238В, ЯМЗ-238Б", "ЯМЗ-236М2")
+    assert not rules.page_for_other_engine("Зазоры клапанов. Для двигателя ЯМЗ-238КМ2 угол 10 град.", "ЯМЗ-236М2")
+    assert not rules.page_for_other_engine("Двигатели ЯМЗ-236 и ЯМЗ-238: натяжение ремней", "ЯМЗ-236М2")
+    assert not rules.page_for_other_engine("Натяжение ремня генератора", "ЯМЗ-236М2")
+    assert not rules.page_for_other_engine("двигатели ЗМЗ-40904.10 и ЗМЗ-40905.10", "ЗМЗ-40905.10")
+
+
+def test_uncited_works_attached_or_labeled():
+    pages = {("yamz536_re", 220): "16 ТЕМПЕРАТУРА ОХЛАЖДАЮЩЕЙ ЖИДКОСТИ ВЫШЕ НОРМЫ. Недостаточно охлаждающей жидкости: долить охлаждающую жидкость, устранить негерметичность радиатора"}
+    t = ("Черновик заявки подготовлен, отправьте его.\n**Проверки**\n- Долить охлаждающую жидкость, устранить негерметичность радиатора.\n"
+         "- Сделать тест на выхлопные газы в охлаждающей жидкости.")
+    out, att, lab = rules.label_uncited_works(t, pages)
+    assert att == ["yamz536_re:220"] and len(lab) == 1 and "по опыту, в руководстве не найдено" in out
+    assert "Черновик заявки подготовлен" not in out
+
+
+def test_clean_part_from_table_row():
+    assert rules.clean_part("Насос масляный | 236-1704010-А | 1 | 336.1704010-10 | 1") == "Насос масляный 236-1704010-А 336.1704010-10"

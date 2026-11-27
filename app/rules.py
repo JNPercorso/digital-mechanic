@@ -82,7 +82,7 @@ def filter_citations(text: str, engine_model: str, seen_pages: set[tuple]) -> tu
 
     def repl(m: re.Match) -> str:
         doc_id, page = m.group(1), int(m.group(2))
-        if doc_id in allowed and (doc_id, page) in seen_pages:
+        if doc_id in allowed and (doc_id, page) in seen_pages and page_usable(doc_id, page, engine_model):
             if (doc_id, page) not in [(r["doc_id"], r["page"]) for r in refs]:
                 refs.append({"doc_id": doc_id, "manual": BY_ID[doc_id].title, "page": page})
             return m.group(0)
@@ -221,7 +221,8 @@ def _stems(text: str) -> set[str]:
 def node_query(result: dict) -> str:
     """Запрос для первого поиска по неисправности: название и слова узла."""
     words = " ".join(" ".join(g) for g in FAULTS.get(result.get("anomaly_type"), (None, []))[1])
-    return f"{result.get('anomaly_title') or ''} {words}".strip()
+    proc = PROCEDURE_HINT.get(result.get("anomaly_type"), "")
+    return f"{result.get('anomaly_title') or ''} {proc} {words}".strip()
 
 
 def page_matches_node(page_text: str, code: str) -> bool:
@@ -444,7 +445,7 @@ CONFLICTS = [
         # формулировка спорного условия вне блока о противоречии: агент выдал бы её как бесспорную
         "avoid": r"15\s*мин",
         # в работах заявки спорная часть условия убирается, остаётся консервативный вариант
-        "strip": r"\s*(,\s*)?(или|либо)?\s*(не ранее|не менее|менее|не позднее)[^.;]*?15\s*мин\w*[^.;]*",
+        "strip": r"\s*\(?\s*(,\s*)?(или|либо)?\s*(не ранее|не менее|менее|не позднее)[^.;()]*?15\s*мин\w*[^.;()]*\)?",
         "keep": "на холодном двигателе",
     },
 ]
@@ -467,21 +468,30 @@ def conflict_block(c: dict) -> str:
 
 
 def disputed_lines(text: str, conflicts: list[dict]) -> tuple[str, list[str]]:
-    """Убирает строки, где спорное условие подано как бесспорное (вне блока о противоречии и ограничений)."""
-    pats = [re.compile(c["avoid"], re.I) for c in conflicts if c.get("avoid")]
+    """Спорное условие вне блока о противоречии и ограничений: оговорка вырезается, остаётся консервативный
+    вариант (строка с нормативом не теряется)."""
+    pats = [(re.compile(c["avoid"], re.I), c) for c in conflicts if c.get("avoid")]
     if not pats:
         return text, []
-    out, removed, section = [], [], ""
+    out, changed, section = [], [], ""
     for line in text.split(chr(10)):
         s = line.strip()
-        h = re.match(r"^\*\*(.+?)\*\*\s*$", s) or re.match(r"^\*\*(Противоречие[^*]*)\*\*", s)
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s)
         if h:
             section = h.group(1).lower()
-        if not h and not any(k in section for k in ("противореч", "огранич")) and any(p.search(s) for p in pats):
-            removed.append(s)
-        else:
+        hit = next((c for p, c in pats if p.search(s)), None)
+        if h or not hit or any(k in section for k in ("противореч", "огранич")):
             out.append(line)
-    return chr(10).join(out), removed
+            continue
+        new = re.sub(hit["strip"], "", line, flags=re.I)
+        if re.search(hit["avoid"], new, re.I):  # оговорка в другой форме - строку убираем
+            changed.append(s)
+            continue
+        if hit["keep"] not in new.lower():
+            new = new.rstrip().rstrip(".") + f" ({hit['keep']})."
+        out.append(new)
+        changed.append(s)
+    return chr(10).join(out), changed
 
 
 def resolve_disputed_ops(ops: list[str], conflicts: list[dict]) -> tuple[list[str], list[str]]:
@@ -682,3 +692,91 @@ def attach_citations(text: str, pages: dict, allowed_numbers: set[str] = frozens
                     break
         i = j + 1
     return chr(10).join(lines), attached
+
+
+# Процедура узла для поиска (раздел руководства, где обычно нормативы и порядок работ)
+PROCEDURE_HINT = {
+    "F01": "регулировка тепловых зазоров клапанов", "F02": "давление масла манометр неисправности системы смазки",
+    "F03": "температура охлаждающей жидкости выше нормы термостат", "F04": "натяжение ремня прогиб",
+    "F05": "генератор неисправности натяжение ремня", "F06": "сцепление регулировка свободный ход",
+    "F07": "коробка передач неисправности", "F08": "форсунки давление впрыскивания топливный насос",
+    "F09": "турбокомпрессор неисправности", "F10": "компрессор пневмосистема насос гидроусилителя",
+    "F11": "клапан рециркуляции проверка", "F12": "свечи зажигания зазор катушка",
+    "F13": "бензонасос проверка карбюратор жиклеры", "F14": "цепь гидронатяжитель успокоитель замена",
+}
+
+
+def engine_family(name: str) -> str:
+    """Семейство двигателя по номеру модели: ЯМЗ-236М2 -> 236, ЗМЗ-40905.10 -> 409, ЗМЗ-5234.10 -> 523."""
+    m = re.search(r"(\d{3})", name or "")
+    return m.group(1) if m else ""
+
+
+def page_for_other_engine(page_text: str, engine_model: str) -> bool:
+    """Страница общего руководства прямо про другие модели (ЯМЗ-238 в руководстве ЯМЗ-236/238):
+    упомянуты модели, и среди них нет семейства двигателя этой машины. Норматив оттуда - ошибка."""
+    fam = engine_family(engine_model)
+    # ЯМЗ/ЗМЗ и ошибки распознавания страниц-картинок (AM3, ЯM3)
+    found = [m[:3] for m in re.findall(r"(?:ЯМЗ|ЗМЗ|[AЯ][MМ][3З])\s*[-–]?\s*(\d{3,5})", page_text or "")]
+    # разовая оговорка «для двигателя ЯМЗ-238КМ2 …» на общей странице не делает её чужой: нужно 3+ упоминания
+    return bool(fam and found and fam not in found and len(found) >= 3)
+
+
+def page_usable(doc_id: str, page: int, engine_model: str) -> bool:
+    """Страницу можно приводить как источник: не оглавление и не про другую модель двигателя."""
+    from app.rag import page_text
+    t = page_text(doc_id, page) or ""
+    return not is_toc_page(t) and not page_for_other_engine(t, engine_model)
+
+
+_META = re.compile(r"^\s*[-•*]?\s*(Черновик заявки (подготовлен|показан|готов|сформирован)|Механик (видит|отправит)|"
+                   r"Отправьте (заявку|черновик))", re.I)
+WORK_SECTIONS = ("проверк", "возможный ремонт")
+
+
+def label_uncited_works(text: str, pages: dict) -> tuple[str, list[str], list[str]]:
+    """Разбор по отклонению: работа в «Проверках» или «Ремонте» без ссылки.
+    Если она подтверждается страницей из поиска - ссылку ставит код; иначе помечается, что это не из руководства.
+    Служебные фразы о черновике заявки убираются."""
+    lines = text.split(chr(10))
+    block = _block_cites(lines)
+    out, attached, labeled, section = [], [], [], ""
+    for i, line in enumerate(lines):
+        s = line.strip()
+        h = re.match(r"^\*\*(.+?)\*\*\s*$", s)
+        if h:
+            section = h.group(1).lower()
+            out.append(line)
+            continue
+        if _META.match(s):
+            continue
+        if not s or CITE.search(s) or block[i] or not any(k in section for k in WORK_SECTIONS) or s.endswith(":"):
+            out.append(line)
+            continue
+        best, share = None, 0.0
+        words = {w for w in _stems(s) if len(w) >= 4 and not w[:1].isdigit() and not w.startswith(_GENERIC)}
+        for key, t in pages.items():
+            if words:
+                sh = len(words & _stems(t)) / len(words)
+                if sh > share:
+                    best, share = key, sh
+        if best and share >= 0.6 and op_supported(s, pages[best]):
+            out.append(line.rstrip() + f" [[{best[0]}:{best[1]}]]")
+            attached.append(f"{best[0]}:{best[1]}")
+        else:
+            out.append(line.rstrip().rstrip(".") + " (по опыту, в руководстве не найдено).")
+            labeled.append(s)
+    return chr(10).join(out), attached, labeled
+
+
+def clean_part(name: str) -> str:
+    """Запчасть из строки таблицы руководства: без разделителей и колонок количества, обозначения без повторов."""
+    t = re.sub(r"\s*\|\s*", " ", name)
+    t = re.sub(r"(?<=\s)\d{1,2}(?=\s|$)", " ", t)  # колонки «количество»
+    seen, words = set(), []
+    for w in t.split():
+        if w in seen and re.match(r"\d", w):
+            continue
+        seen.add(w)
+        words.append(w)
+    return re.sub(r"\s+", " ", " ".join(words)).strip(" ;,")

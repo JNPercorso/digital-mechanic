@@ -214,13 +214,17 @@ def search(query: str, engine_model: str, k: int = 6) -> list[dict]:
     doc_ids = tuple(m.doc_id for m in manuals_for_engine(engine_model))
     if not doc_ids:
         return []
+    from app.rules import page_usable
     bm25, items = _bm25(doc_ids)
     scores = bm25.get_scores(tokenize(query))
-    best = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)[:k]
-    return [
-        {**items[i], "manual": BY_ID[items[i]["doc_id"]].title, "score": round(float(scores[i]), 2)}
-        for i in best if scores[i] > 0
-    ]
+    order = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)
+    out = []
+    for i in order:  # оглавления и страницы про другие модели двигателя в общем руководстве - не источник
+        if scores[i] <= 0 or len(out) >= k:
+            break
+        if page_usable(items[i]["doc_id"], items[i]["page"], engine_model):
+            out.append({**items[i], "manual": BY_ID[items[i]["doc_id"]].title, "score": round(float(scores[i]), 2)})
+    return out
 
 
 PART_NO = re.compile(r"\b\d{3,6}[.-]\d{6,7}(?:[-.][\wА-ЯЁ]+)?")  # обозначение детали: 236-1007118-В

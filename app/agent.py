@@ -349,6 +349,7 @@ class Run:
             text = rag.page_text(x["doc_id"], x["page"]) or ""
             q = quotes.get((x["doc_id"], x["page"]), "")
             why = ("оглавление" if rules.is_toc_page(text) else
+                   "страница про другую модель двигателя" if rules.page_for_other_engine(text, self.engine) else
                    "страница не про узел неисправности" if not rules.page_matches_node(text, r["anomaly_type"]) else
                    "цитаты нет на странице" if not rules.quote_on_page(q, text) else "")
             if why:
@@ -383,13 +384,19 @@ class Run:
         given = [str(x).strip() for x in (args.get("spare_parts") or []) if str(x).strip()]
         if not given and r.get("anomaly_type"):
             for c in rag.parts_for(self.engine, rules.FAULTS.get(r["anomaly_type"], (None, []))[1], limit=12):
-                name = re.sub(r"\s*\|\s*", " ", c["text"]).strip()
+                name = rules.clean_part(c["text"])
                 if rules.part_fits_works(name, ops) and len(given) < 6:
                     self.seen_pages.add((c["doc_id"], c["page"]))
                     given.append(name)
             if given:
                 store.log_event("parts_from_manual", {"parts": given}, request_id=self.id, vehicle_id=self.v["vehicle_id"])
-        args = {**args, "spare_parts": given}
+        uniq, seen_no = [], set()
+        for x in (rules.clean_part(g) for g in given):
+            key = tuple(rag.PART_NO.findall(x)) or (x.lower(),)
+            if key not in seen_no:
+                seen_no.add(key)
+                uniq.append(x)
+        args = {**args, "spare_parts": uniq}
         # Запчасти: обозначение и название должны быть на страницах, найденных поиском в этом запросе
         seen_text = chr(10).join(rag.page_text(d, p) or "" for d, p in self.seen_pages)
         parts, bad_parts = [], []
@@ -526,6 +533,14 @@ class Run:
                     store.log_event("rejected_citations", {"refs": rejected}, request_id=self.id,
                                     vehicle_id=self.v["vehicle_id"])
                 if self.node and self.result and self.result.get("status") == "anomaly":
+                    text, att, lab = rules.label_uncited_works(text, {k: rag.page_text(*k) or "" for k in self.seen_pages
+                                                                        if rules.page_usable(k[0], k[1], self.engine)})
+                    if att or lab:
+                        store.log_event("works_checked", {"attached": att, "labeled": lab}, request_id=self.id,
+                                        vehicle_id=self.v["vehicle_id"])
+                        text, refs2, _ = rules.filter_citations(text, self.engine, self.seen_pages)
+                        refs = refs + [r for r in refs2 if (r["doc_id"], r["page"]) not in {(x["doc_id"], x["page"]) for x in refs}]
+                        self._tag(refs)
                     text, added = rules.enforce_structure(text, self.result, refs)  # порядок разделов по ТЗ
                     if added:
                         store.log_event("structure_completed", {"added": added}, request_id=self.id,
