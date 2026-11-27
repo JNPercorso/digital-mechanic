@@ -232,3 +232,7 @@ def test_uncited_works_attached_or_labeled():
 
 def test_clean_part_from_table_row():
     assert rules.clean_part("Насос масляный | 236-1704010-А | 1 | 336.1704010-10 | 1") == "Насос масляный 236-1704010-А 336.1704010-10"
+
+
+def test_ban_word_nedopustimo():
+    assert rules.is_ban("Система считает, что эксплуатация до дефектовки недопустима.")
