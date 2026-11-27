@@ -10,7 +10,7 @@ import time
 import uuid
 from typing import AsyncIterator
 
-from app import llm, rag, rules, services, store
+from app import llm, rag, rules, sections, services, store
 from app.manuals import manuals_for_engine
 
 MAX_TOOL_CALLS = 6
@@ -287,7 +287,9 @@ class Run:
                 self.page_queries.setdefault((h["doc_id"], h["page"]), q)
             if not hits:
                 return {"found": [], "note": "В руководствах этого двигателя ничего не найдено"}, evs
+            # раздел руководства, в котором стоит фрагмент (эксплуатация, ТО, неисправности, ремонт, обкатка...)
             out = {"found": [{"doc_id": h["doc_id"], "manual": h["manual"], "page": h["page"],
+                              **{k: v for k, v in sections.section_of(h["doc_id"], h["page"]).items()},
                               "text": h["text"]} for h in hits]}
             # Известное противоречие в документации: подтягиваем все его страницы, даже если поиск нашёл одну
             confl = rules.conflicts_for_pages({(h["doc_id"], h["page"]) for h in hits})
