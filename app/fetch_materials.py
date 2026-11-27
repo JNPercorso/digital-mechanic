@@ -7,14 +7,16 @@
   - данные заглушек (карточки машин, ответы диагностики, справочник неисправностей) -> mocks/data/;
   - затем: python -m app.rag build, python -m app.sections build.
 
-Поддерживаются прямая ссылка на файл и ссылка Google Drive на файл.
+Поддерживаются прямая ссылка на .zip, публичная ссылка Яндекс.Диска (файл или папка) и ссылка Google Drive на файл.
 """
 import io
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -33,7 +35,12 @@ SOURCE_NAMES = {
 
 
 def _direct(url: str) -> str:
-    """Ссылка Google Drive на файл -> прямое скачивание (для больших файлов - с подтверждением)."""
+    """Публичная ссылка -> прямое скачивание.
+    Яндекс.Диск: через API Диска (папка отдаётся архивом .zip); Google Drive: файл с подтверждением."""
+    if re.search(r"(disk\.yandex\.\w+|yadi\.sk)/", url):
+        api = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=" + urllib.parse.quote(url, safe="")
+        with urllib.request.urlopen(urllib.request.Request(api, headers={"User-Agent": "digital-mechanic-deploy"}), timeout=60) as r:
+            return json.loads(r.read())["href"]
     m = re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([\w-]{20,})", url)
     if m:
         return f"https://drive.usercontent.google.com/download?id={m.group(1)}&export=download&confirm=t"
