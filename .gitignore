@@ -11,3 +11,4 @@ data/*.db
 logs/
 temp/
 .claude/
+mocks/data/*.json
