@@ -482,7 +482,8 @@ class Run:
             msg = res["message"]
             fc = msg.get("function_call")
             step = {"get_check_result": "выбор: результат проверки", "get_vehicle_history": "выбор: история машины",
-                    "search_manual": "выбор: поиск в руководстве", "draft_ticket": "черновик заявки"}.get(
+                    "search_manual": "выбор: поиск в руководстве", "draft_ticket": "черновик заявки",
+                    "find_parts": "выбор: запчасти узла", "show_in_chat": "показ в чате"}.get(
                 fc["name"] if fc else "", "ответ механику")
             store.log_usage(self.id, fc["name"] if fc else "answer", res["model"], u, res["seconds"])
             yield {"type": "llm", "name": step, "model": res["model"], "tin": u.get("prompt_tokens", 0),
