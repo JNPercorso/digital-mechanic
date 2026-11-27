@@ -80,6 +80,10 @@ def unpack(data: bytes) -> dict:
             elif re.search(r"(^|/)mock/data/[^/]+\.json$", name.replace("\\", "/")):
                 (MOCK_DATA / base).write_bytes(z.read(info))
                 stats["mock_data"] += 1
+            elif base.lower().endswith(".zip"):  # заглушки в материалах лежат отдельным архивом внутри архива
+                inner = unpack(z.read(info))
+                for k in stats:
+                    stats[k] += inner[k]
     return stats
 
 
