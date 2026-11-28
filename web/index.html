@@ -351,8 +351,10 @@ html,body{overflow:hidden;overscroll-behavior:none;max-width:100%}.pane,.chat,#p
   <div class="pb">
     <div class="ph">ДАННЫЕ ДЛЯ ДЕМО: ТРЕНД</div>
     <div class="seg" id="trSeg"><button data-tr="auto">По данным</button><button data-tr="none">Нет проверок</button><button data-tr="fails">Только сбои</button></div>
-    <button class="btn" id="clrChats" style="width:100%;margin-top:8px;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 10px"><i class="ti ti-trash"></i> Очистить чаты по всем машинам</button>
-    <button class="btn" id="clrTickets" style="width:100%;margin-top:6px;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 10px"><i class="ti ti-file-x"></i> Очистить список заявок</button>
+    <div style="display:flex;gap:6px;margin-top:8px">
+    <button class="btn" id="clrChats" title="Очистить чаты по всем машинам" style="flex:1;min-width:0;white-space:nowrap;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 6px"><i class="ti ti-trash"></i> Очистить чаты</button>
+    <button class="btn" id="clrTickets" title="Очистить список заявок по всем машинам" style="flex:1;min-width:0;white-space:nowrap;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 6px"><i class="ti ti-file-x"></i> Очистить заявки</button>
+    </div>
   </div>
   <div class="pb">
     <div class="ph">МОДЕЛЬ И ПОТОКИ</div>
