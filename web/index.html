@@ -352,6 +352,7 @@ html,body{overflow:hidden;overscroll-behavior:none;max-width:100%}.pane,.chat,#p
     <div class="ph">ДАННЫЕ ДЛЯ ДЕМО: ТРЕНД</div>
     <div class="seg" id="trSeg"><button data-tr="auto">По данным</button><button data-tr="none">Нет проверок</button><button data-tr="fails">Только сбои</button></div>
     <button class="btn" id="clrChats" style="width:100%;margin-top:8px;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 10px"><i class="ti ti-trash"></i> Очистить чаты по всем машинам</button>
+    <button class="btn" id="clrTickets" style="width:100%;margin-top:6px;color:var(--panel-text);border-color:var(--panel-border);font-size:12px;padding:7px 10px"><i class="ti ti-file-x"></i> Очистить список заявок</button>
   </div>
   <div class="pb">
     <div class="ph">МОДЕЛЬ И ПОТОКИ</div>
@@ -729,6 +730,8 @@ $('themeSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.d
 
 // Демо: стереть диалоги всех машин на этом устройстве, чтобы сценарий можно было пройти заново
 $('clrChats').onclick=()=>{if(busy||!confirm('Очистить чаты по всем машинам на этом устройстве?'))return;try{Object.keys(localStorage).filter(k=>k.startsWith('dm_chat_')).forEach(k=>localStorage.removeItem(k));}catch(e){}diagDone={};location.reload();};
+// Демо: удалить все заявки и черновики на сервере; диалоги ссылаются на черновики, поэтому чистятся тоже
+$('clrTickets').onclick=async()=>{if(busy||!confirm('Очистить список заявок по всем машинам? Чаты тоже очистятся.'))return;try{await fetch('api/demo/clear-tickets',{method:'POST'});Object.keys(localStorage).filter(k=>k.startsWith('dm_chat_')).forEach(k=>localStorage.removeItem(k));}catch(e){}location.reload();};
 $('trSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;trendDemo=b.dataset.tr;applyTheme();renderMain();logEv('ui','тренд (демо): '+b.textContent);};
 applyTheme();
 

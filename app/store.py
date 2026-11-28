@@ -116,6 +116,11 @@ def _decode(r: dict) -> dict:
     return r
 
 
+def clear_tickets() -> int:
+    """Демо: удалить все заявки и черновики, чтобы сценарий можно было пройти заново."""
+    return _exec("DELETE FROM tickets").rowcount
+
+
 def has_draft(vehicle_id: str, session_id: str) -> bool:
     """Есть ли черновик заявки по этой проверке (для «покажи заявку»)."""
     return bool(_rows("SELECT 1 FROM tickets WHERE vehicle_id=? AND session_id=? LIMIT 1", (vehicle_id, session_id)))

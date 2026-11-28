@@ -104,6 +104,16 @@ def ticket(tid: int):
     return t
 
 
+@app.post("/api/demo/clear-tickets")
+def clear_tickets(request: Request):
+    """Панель демонстрации: очистить список заявок по всем машинам."""
+    if not _rate_ok(request.client.host):
+        raise HTTPException(429, "Слишком много запросов, подождите минуту")
+    n = store.clear_tickets()
+    store.log_event("demo_clear_tickets", {"deleted": n}, actor="mechanic")
+    return {"deleted": n}
+
+
 class TicketEdit(BaseModel):
     urgency: str | None = Field(default=None, pattern="^(low|medium|high)$")
     operations: list[str] | None = None
